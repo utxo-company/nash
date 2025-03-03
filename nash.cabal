@@ -72,7 +72,10 @@ executable nash
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.20.0.0
+    build-depends:
+        base ^>=4.20.0.0
+      , plutus-core
+      , cardano-crypto-class == 2.1.5.0
 
     -- Directories containing source files.
     hs-source-dirs:   app
