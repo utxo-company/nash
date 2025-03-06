@@ -1,0 +1,50 @@
+
+```
+type Thing {
+    id: ByteArray,
+    name: ByteArray,
+    age: Int,
+}
+
+
+
+let { id: bytearray, name, age } = value
+blah-blah
+```
+
+
+
+
+
+\Thing -> (\ByteArray -> ByteArray -> Int -> (\ByteArray -> (\ByteArray -> bytearray) -> z ) -> z ) -> z
+
+So a let function can simply be a combination
+of this function types
+
+
+∀a.\a -> (∀b.\b -> z) -> z
+
+
+
+
+
+
+fn(Thing,
+  fn(ByteArray, ByteArray, Int,
+    fn(ByteArray, fn(ByteArray) -> bytearray) -> z)
+  -> z)
+-> z
+
+
+
+
+
+
+
+
+macro fields(thing, ctx):
+  when thing is:
+    [Token("let"), ..xs] -> stuff
+    _ -> SomeError
+  end
+end
