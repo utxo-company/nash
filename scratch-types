@@ -6,12 +6,28 @@ type Thing {
     age: Int,
 }
 
+// Notice the lowercase int
+Thing from data is pair<int, tuple3<ByteArray, ByteArray, Int>>
+
+
+tuples of n can also match on the type open-tuples of k length iff
+each k item matches the corresponding n item and n >= k
 
 
 let { id: bytearray, name, age } = value
 blah-blah
 ```
 
+
+
+type FieldThree \(\Int -> TranslateFieldOne -> z) -> z
+
+type FieldTwo =  \(\ByteArray -> FieldThree -> z) -> z
+
+type FieldOne = \(\ByteArray -> FieldTwo -> z) -> z
+
+∀a.\a -> (∀b.\b -> z) -> z
+\Thing -> (\(\pair<int, tuple3<ByteArray, ByteArray, Int>> -> FieldOne -> z ) -> z ) -> z
 
 
 
