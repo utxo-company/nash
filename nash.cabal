@@ -124,6 +124,7 @@ test-suite nash-tests
 
   build-depends:
       base >=4.12 && <5
+    , bytestring
     , nash
     , tasty >=1.4
     , tasty-golden >=2.3
