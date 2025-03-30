@@ -1,5 +1,12 @@
 run *args:
-    cabal run nash -- {{args}}
+    #!/usr/bin/env bash
+
+    cabal run nash -v0 -- {{args}}
+
+build:
+    #!/usr/bin/env bash
+
+    cabal build nash
 
 # MacOS specific system dependencies
 setup:

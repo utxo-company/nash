@@ -67,6 +67,19 @@ executable nash
     -- Modules included in this executable, other than Main.
     other-modules:
         Nash
+        Nash.Cmd
+        Nash.Terminal
+        Nash.Terminal.Build
+        Nash.Terminal.Check
+        Nash.Terminal.Common
+        Nash.Terminal.Fmt
+        Nash.Terminal.Parsers
+        Nash.Terminal.Uplc
+        Nash.Terminal.Uplc.Decode
+        Nash.Terminal.Uplc.Encode
+        Nash.Terminal.Uplc.Eval
+        Nash.Terminal.Uplc.Fmt
+        Nash.Terminal.Uplc.Shrink
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -74,8 +87,11 @@ executable nash
     -- Other library packages from which modules are imported.
     build-depends:
         base ^>=4.20.0.0
-      , plutus-core
       , cardano-crypto-class == 2.1.5.0
+      , filepath
+      , optparse-applicative
+      , plutus-core
+      , text
 
     -- Directories containing source files.
     hs-source-dirs:   app

@@ -1,4 +1,8 @@
-module Nash where
+module Nash
+  ( module Nash.Terminal,
+    module Nash.Cmd,
+  )
+where
 
-greet :: String -> String
-greet name = "Hello, " ++ name ++ " from nash!"
+import Nash.Cmd
+import Nash.Terminal
