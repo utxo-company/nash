@@ -5,6 +5,7 @@ module Nash.Terminal.Parsers where
 import Nash.Terminal.Build (BuildArgs, buildArgsParser)
 import Nash.Terminal.Check (CheckArgs, checkArgsParser)
 import Nash.Terminal.Fmt (FmtArgs, fmtArgsParser)
+import Nash.Terminal.Test (TestArgs, testArgsParser)
 import Nash.Terminal.Uplc
   ( UplcCmd (..),
     uplcDecodeArgsParser,
@@ -20,6 +21,7 @@ data Cmd
   | Build BuildArgs
   | Check CheckArgs
   | Uplc UplcCmd
+  | Test TestArgs
   deriving (Show)
 
 cmdParser :: Parser Cmd
@@ -48,6 +50,12 @@ cmdParser =
           ( info
               (Uplc <$> uplcCmdParser <**> helper)
               (progDesc "Commands for working with untyped Plutus-core")
+          )
+        <> command
+          "test"
+          ( info
+              (Test <$> testArgsParser <**> helper)
+              (progDesc "Run tests for an Aiken project")
           )
     )
     <**> infoOption "version placeholder" (long "version" <> help "Show version")

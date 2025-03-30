@@ -4,6 +4,7 @@ import Nash.Terminal.Build (BuildArgs)
 import Nash.Terminal.Check (CheckArgs)
 import Nash.Terminal.Fmt (FmtArgs)
 import Nash.Terminal.Parsers (Cmd (..))
+import Nash.Terminal.Test (TestArgs)
 import Nash.Terminal.Uplc (UplcCmd (..))
 
 handleCmd :: Cmd -> IO ()
@@ -12,6 +13,7 @@ handleCmd cmd = case cmd of
   Build args -> handleBuild args
   Check args -> handleCheck args
   Uplc uplcCmd -> handleUplc uplcCmd
+  Test testArgs -> handleTest testArgs
 
 handleFmt :: FmtArgs -> IO ()
 handleFmt _ = putStrLn "Formatting project (dummy implementation)"
@@ -21,6 +23,9 @@ handleBuild _ = putStrLn "Building project (dummy implementation)"
 
 handleCheck :: CheckArgs -> IO ()
 handleCheck _ = putStrLn "Checking project (dummy implementation)"
+
+handleTest :: TestArgs -> IO ()
+handleTest _ = putStrLn "Testing project (dummy implementation)"
 
 handleUplc :: UplcCmd -> IO ()
 handleUplc cmd = case cmd of

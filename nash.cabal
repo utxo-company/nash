@@ -73,6 +73,7 @@ executable nash
         Nash.Terminal.Check
         Nash.Terminal.Common
         Nash.Terminal.Fmt
+        Nash.Terminal.Test
         Nash.Terminal.Parsers
         Nash.Terminal.Uplc
         Nash.Terminal.Uplc.Decode
