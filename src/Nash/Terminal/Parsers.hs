@@ -31,19 +31,19 @@ cmdParser =
         "fmt"
         ( info
             (Fmt <$> fmtArgsParser <**> helper)
-            (progDesc "Format an Aiken project")
+            (progDesc "Format a nash project")
         )
         <> command
           "build"
           ( info
               (Build <$> buildArgsParser <**> helper)
-              (progDesc "Build an Aiken project")
+              (progDesc "Build a nash project")
           )
         <> command
           "check"
           ( info
               (Check <$> checkArgsParser <**> helper)
-              (progDesc "Type-check an Aiken project and run tests")
+              (progDesc "Type-check a nash project and run tests")
           )
         <> command
           "uplc"
@@ -55,7 +55,7 @@ cmdParser =
           "test"
           ( info
               (Test <$> testArgsParser <**> helper)
-              (progDesc "Run tests for an Aiken project")
+              (progDesc "Run tests for a nash project")
           )
     )
     <**> infoOption "version placeholder" (long "version" <> help "Show version")

@@ -8,6 +8,16 @@ build:
 
     cabal build nash
 
+test:
+    #!/usr/bin/env bash
+
+    cabal test
+
+test-accept:
+    #!/usr/bin/env bash
+
+    cabal test --test-option=--accept
+
 # MacOS specific system dependencies
 setup:
     #!/usr/bin/env bash

@@ -57,15 +57,10 @@ extra-doc-files:    CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
-executable nash
-    -- Import common warning flags.
+library
     import:           warnings
 
-    -- .hs or .lhs file containing the Main module.
-    main-is:          Main.hs
-
-    -- Modules included in this executable, other than Main.
-    other-modules:
+    exposed-modules:
         Nash
         Nash.Cmd
         Nash.Terminal
@@ -82,10 +77,6 @@ executable nash
         Nash.Terminal.Uplc.Fmt
         Nash.Terminal.Uplc.Shrink
 
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
-
-    -- Other library packages from which modules are imported.
     build-depends:
         base ^>=4.20.0.0
       , cardano-crypto-class == 2.1.5.0
@@ -94,8 +85,47 @@ executable nash
       , plutus-core
       , text
 
+    hs-source-dirs:   src
+
+    default-language: GHC2024
+
+executable nash
+    -- Import common warning flags.
+    import:           warnings
+
+    -- .hs or .lhs file containing the Main module.
+    main-is:          Main.hs
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+
+    -- Other library packages from which modules are imported.
+    build-depends:
+        base ^>=4.20.0.0
+      , nash
+      , optparse-applicative
+      , plutus-core
+
     -- Directories containing source files.
-    hs-source-dirs:   app
+    hs-source-dirs:   src/bin
 
     -- Base language which the package is written in.
     default-language: GHC2024
+
+
+test-suite nash-tests
+  import:           warnings
+
+  type:             exitcode-stdio-1.0
+
+  main-is:          Test.hs
+
+  hs-source-dirs:   tests
+
+  build-depends:
+      base >=4.12 && <5
+    , nash
+    , tasty >=1.4
+    , tasty-golden >=2.3
+
+  default-language: GHC2024
