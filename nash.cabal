@@ -1,4 +1,5 @@
-cabal-version:      3.0
+cabal-version:   3.0
+
 -- The cabal-version field refers to the version of the .cabal specification,
 -- and can be different from the cabal-install (the tool) version and the
 -- Cabal (the library) version you are using. As such, the Cabal (the library)
@@ -11,7 +12,7 @@ cabal-version:      3.0
 --   http://haskell.org/cabal/users-guide/
 --
 -- The name of the package.
-name:               nash
+name:            nash
 
 -- The package version.
 -- See the Haskell package versioning policy (PVP) for standards
@@ -20,113 +21,106 @@ name:               nash
 -- PVP summary:     +-+------- breaking API changes
 --                  | | +----- non-breaking API additions
 --                  | | | +--- code changes with no API change
-version:            0.1.0.0
+version:         0.1.0.0
 
 -- A short (one-line) description of the package.
-synopsis:           A cardano smart contract language
+synopsis:        A cardano smart contract language
 
 -- A longer description of the package.
 -- description:
 
 -- URL for the project homepage or repository.
-homepage:           https://nash-script.dev
+homepage:        https://nash-script.dev
 
 -- The license under which the package is released.
-license:            Apache-2.0
+license:         Apache-2.0
 
 -- The file containing the license text.
-license-file:       LICENSE
+license-file:    LICENSE
 
 -- The package author(s).
-author:             rvcas
+author:          rvcas
 
 -- An email address to which users can send suggestions, bug reports, and patches.
-maintainer:         x@rvcas.dev
+maintainer:      x@rvcas.dev
 
 -- A copyright notice.
 -- copyright:
-category:           Language
-build-type:         Simple
+category:        Language
+build-type:      Simple
 
 -- Extra doc files to be distributed with the package, such as a CHANGELOG or a README.
-extra-doc-files:    CHANGELOG.md
+extra-doc-files: CHANGELOG.md
 
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
 -- extra-source-files:
 
 common warnings
-    ghc-options: -Wall
+  ghc-options: -Wall
 
 library
-    import:           warnings
+  import:           warnings
+  exposed-modules:
+    Nash
+    Nash.Cmd
+    Nash.Terminal
+    Nash.Terminal.Build
+    Nash.Terminal.Check
+    Nash.Terminal.Common
+    Nash.Terminal.Fmt
+    Nash.Terminal.Parsers
+    Nash.Terminal.Test
+    Nash.Terminal.Uplc
+    Nash.Terminal.Uplc.Decode
+    Nash.Terminal.Uplc.Encode
+    Nash.Terminal.Uplc.Eval
+    Nash.Terminal.Uplc.Fmt
+    Nash.Terminal.Uplc.Shrink
 
-    exposed-modules:
-        Nash
-        Nash.Cmd
-        Nash.Terminal
-        Nash.Terminal.Build
-        Nash.Terminal.Check
-        Nash.Terminal.Common
-        Nash.Terminal.Fmt
-        Nash.Terminal.Test
-        Nash.Terminal.Parsers
-        Nash.Terminal.Uplc
-        Nash.Terminal.Uplc.Decode
-        Nash.Terminal.Uplc.Encode
-        Nash.Terminal.Uplc.Eval
-        Nash.Terminal.Uplc.Fmt
-        Nash.Terminal.Uplc.Shrink
+  build-depends:
+    , base
+    , cardano-crypto-class  ==2.1.5.0
+    , filepath
+    , optparse-applicative
+    , plutus-core
+    , text
 
-    build-depends:
-        base ^>=4.20.0.0
-      , cardano-crypto-class == 2.1.5.0
-      , filepath
-      , optparse-applicative
-      , plutus-core
-      , text
-
-    hs-source-dirs:   src
-
-    default-language: GHC2024
+  hs-source-dirs:   src
+  default-language: GHC2021
 
 executable nash
-    -- Import common warning flags.
-    import:           warnings
+  -- Import common warning flags.
+  import:           warnings
 
-    -- .hs or .lhs file containing the Main module.
-    main-is:          Main.hs
+  -- .hs or .lhs file containing the Main module.
+  main-is:          Main.hs
 
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
+  -- LANGUAGE extensions used by modules in this package.
+  -- other-extensions:
 
-    -- Other library packages from which modules are imported.
-    build-depends:
-        base ^>=4.20.0.0
-      , nash
-      , optparse-applicative
-      , plutus-core
+  -- Other library packages from which modules are imported.
+  build-depends:
+    , base
+    , nash
+    , optparse-applicative
+    , plutus-core
 
-    -- Directories containing source files.
-    hs-source-dirs:   src/bin
+  -- Directories containing source files.
+  hs-source-dirs:   src/bin
 
-    -- Base language which the package is written in.
-    default-language: GHC2024
-
+  -- Base language which the package is written in.
+  default-language: GHC2021
 
 test-suite nash-tests
   import:           warnings
-
   type:             exitcode-stdio-1.0
-
   main-is:          Test.hs
-
   hs-source-dirs:   tests
-
   build-depends:
-      base >=4.12 && <5
+    , base
     , bytestring
     , nash
-    , tasty >=1.4
-    , tasty-golden >=2.3
+    , tasty         >=1.4
+    , tasty-golden  >=2.3
 
-  default-language: GHC2024
+  default-language: GHC2021
