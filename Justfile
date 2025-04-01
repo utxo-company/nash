@@ -6,7 +6,17 @@ run *args:
 build:
     #!/usr/bin/env bash
 
-    cabal build nash
+    cabal build exe:nash
+
+release:
+    #!/usr/bin/env bash
+
+    cabal build exe:nash --ghc-options="-O2"
+
+fmt:
+    #!/usr/bin/env bash
+
+    fourmolu -i .
 
 test:
     #!/usr/bin/env bash

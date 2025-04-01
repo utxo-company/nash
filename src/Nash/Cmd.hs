@@ -9,11 +9,11 @@ import Nash.Terminal.Uplc (UplcCmd (..))
 
 handleCmd :: Cmd -> IO ()
 handleCmd cmd = case cmd of
-  Fmt args -> handleFmt args
-  Build args -> handleBuild args
-  Check args -> handleCheck args
-  Uplc uplcCmd -> handleUplc uplcCmd
-  Test testArgs -> handleTest testArgs
+    Fmt args -> handleFmt args
+    Build args -> handleBuild args
+    Check args -> handleCheck args
+    Uplc uplcCmd -> handleUplc uplcCmd
+    Test testArgs -> handleTest testArgs
 
 handleFmt :: FmtArgs -> IO ()
 handleFmt _ = putStrLn "Formatting project (dummy implementation)"
@@ -29,8 +29,8 @@ handleTest _ = putStrLn "Testing project (dummy implementation)"
 
 handleUplc :: UplcCmd -> IO ()
 handleUplc cmd = case cmd of
-  UplcFmt _ -> putStrLn "Formatting UPLC (dummy implementation)"
-  UplcEval _ -> putStrLn "Evaluating UPLC (dummy implementation)"
-  UplcEncode _ -> putStrLn "Encoding UPLC (dummy implementation)"
-  UplcDecode _ -> putStrLn "Decoding UPLC (dummy implementation)"
-  UplcShrink _ -> putStrLn "Shrinking UPLC (dummy implementation)"
+    UplcFmt _ -> putStrLn "Formatting UPLC (dummy implementation)"
+    UplcEval _ -> putStrLn "Evaluating UPLC (dummy implementation)"
+    UplcEncode _ -> putStrLn "Encoding UPLC (dummy implementation)"
+    UplcDecode _ -> putStrLn "Decoding UPLC (dummy implementation)"
+    UplcShrink _ -> putStrLn "Shrinking UPLC (dummy implementation)"

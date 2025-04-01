@@ -9,7 +9,7 @@ main = defaultMain tests
 
 tests :: TestTree
 tests =
-  testGroup
-    "Parser Tests"
-    [ goldenVsString "Dummy Parse" "tests/golden/dummy.txt" $ pure $ BS.pack "Hello, World!"
-    ]
+    testGroup
+        "Parser Tests"
+        [ goldenVsString "Dummy Parse" "tests/golden/dummy.txt" $ pure $ BS.pack "Hello, World!"
+        ]
