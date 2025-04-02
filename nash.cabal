@@ -61,8 +61,26 @@ common warnings
 library
   import:           warnings
   exposed-modules:
+    -- Data
+    Data.Name
+    Data.Utf8
+
+    -- Nash
     Nash
+    Nash.Ast.Source
+    Nash.Ast.Utils.BinOp
     Nash.Cmd
+    Nash.ModuleName
+    Nash.Package
+    Nash.Parse.Module
+    Nash.Parse.Primitives
+    Nash.Parse.Symbol
+    Nash.Reporting.Annotation
+    Nash.Reporting.Doc
+    Nash.Reporting.Error.Syntax
+    Nash.Reporting.Render.Code
+    Nash.Reporting.Report
+    Nash.String
     Nash.Terminal
     Nash.Terminal.Build
     Nash.Terminal.Check
@@ -79,8 +97,11 @@ library
 
   build-depends:
     , base
+    , binary
+    , bytestring
     , cardano-crypto-class  ==2.1.5.0
     , filepath
+    , ghc-prim
     , optparse-applicative
     , plutus-core
     , text

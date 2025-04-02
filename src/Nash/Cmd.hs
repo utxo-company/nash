@@ -1,11 +1,13 @@
 module Nash.Cmd where
 
-import Nash.Terminal.Build (BuildArgs)
-import Nash.Terminal.Check (CheckArgs)
-import Nash.Terminal.Fmt (FmtArgs)
-import Nash.Terminal.Parsers (Cmd (..))
-import Nash.Terminal.Test (TestArgs)
-import Nash.Terminal.Uplc (UplcCmd (..))
+import Nash.Terminal (
+    BuildArgs,
+    CheckArgs,
+    Cmd (..),
+    FmtArgs,
+    TestArgs,
+    UplcCmd (..),
+ )
 
 handleCmd :: Cmd -> IO ()
 handleCmd cmd = case cmd of
