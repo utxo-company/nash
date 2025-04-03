@@ -1,7 +1,6 @@
 module Main where
 
 import Data.ByteString qualified as BS
-import Data.ByteString.Lazy.Char8 qualified as BSL
 import Nash.Parse.Module qualified as M
 import System.Directory (createDirectoryIfMissing)
 import Test.Tasty
@@ -14,8 +13,7 @@ tests :: TestTree
 tests =
     testGroup
         "Parser Tests"
-        [ goldenVsString "Dummy Parse" "tests/golden/dummy.txt" $ pure $ BSL.pack "Hello, World!"
-        , goldenParse "Parse module" "module"
+        [ goldenParse "Parse module" "module"
         ]
 
 goldenParse :: String -> String -> TestTree

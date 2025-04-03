@@ -7,7 +7,7 @@ import Nash.Package qualified as Pkg
 import Nash.Reporting.Error.Syntax qualified as E
 
 fromByteString :: ProjectType -> BS.ByteString -> Either E.Error Src.Module
-fromByteString _ _ = Left $ E.ModuleNameUnspecified (Data.Utf8.fromChars "thing")
+fromByteString _ _ = Left $ E.ModuleNameUnspecified (Data.Utf8.fromChars "thin")
 
 -- PROJECT TYPE
 
