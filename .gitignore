@@ -1,2 +1,5 @@
 dist-newstyle/
+
 .pre-commit-config.yaml
+
+tests/output/

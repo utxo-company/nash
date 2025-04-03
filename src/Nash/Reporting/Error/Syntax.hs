@@ -26,6 +26,7 @@ data Error
     | NoPortModulesInPackage A.Region
     | NoEffectsOutsideKernel A.Region
     | ParseError Module
+    deriving (Show)
 
 -- | Module
 data Module
@@ -59,6 +60,7 @@ data Module
       Infix Row Col
     | --
       Declarations Decl Row Col
+    deriving (Show)
 
 data Exposing
     = ExposingSpace Space Row Col
@@ -72,6 +74,7 @@ data Exposing
     | --
       ExposingIndentEnd Row Col
     | ExposingIndentValue Row Col
+    deriving (Show)
 
 -- | Declation
 data Decl
@@ -83,6 +86,7 @@ data Decl
     | DeclDef Name.Name DeclDef Row Col
     | --
       DeclFreshLineAfterDocComment Row Col
+    deriving (Show)
 
 data DeclDef
     = DeclDefSpace Space Row Col
@@ -96,6 +100,7 @@ data DeclDef
       DeclDefIndentType Row Col
     | DeclDefIndentEquals Row Col
     | DeclDefIndentBody Row Col
+    deriving (Show)
 
 data Port
     = PortSpace Space Row Col
@@ -105,6 +110,7 @@ data Port
     | PortIndentName Row Col
     | PortIndentColon Row Col
     | PortIndentType Row Col
+    deriving (Show)
 
 -- | Type Declarations
 data DeclType
@@ -114,6 +120,7 @@ data DeclType
     | DT_Union CustomType Row Col
     | --
       DT_IndentName Row Col
+    deriving (Show)
 
 data TypeAlias
     = AliasSpace Space Row Col
@@ -123,6 +130,7 @@ data TypeAlias
     | --
       AliasIndentEquals Row Col
     | AliasIndentBody Row Col
+    deriving (Show)
 
 data CustomType
     = CT_Space Space Row Col
@@ -136,6 +144,7 @@ data CustomType
     | CT_IndentBar Row Col
     | CT_IndentAfterBar Row Col
     | CT_IndentAfterEquals Row Col
+    deriving (Show)
 
 -- EXPRESSIONS
 
@@ -162,6 +171,7 @@ data Expr
     | EndlessShader Row Col
     | ShaderProblem [Char.Char] Row Col
     | IndentOperatorRight Name.Name Row Col
+    deriving (Show)
 
 -- | Record Expression
 data Record
@@ -177,6 +187,7 @@ data Record
     | RecordIndentField Row Col
     | RecordIndentEquals Row Col
     | RecordIndentExpr Row Col
+    deriving (Show)
 
 -- | Tuple Expression
 data Tuple
@@ -189,6 +200,7 @@ data Tuple
       TupleIndentExpr1 Row Col
     | TupleIndentExprN Row Col
     | TupleIndentEnd Row Col
+    deriving (Show)
 
 -- | List Expression
 data List
@@ -200,6 +212,7 @@ data List
       ListIndentOpen Row Col
     | ListIndentEnd Row Col
     | ListIndentExpr Row Col
+    deriving (Show)
 
 -- | Lambda Expression
 data Func
@@ -211,6 +224,7 @@ data Func
       FuncIndentArg Row Col
     | FuncIndentArrow Row Col
     | FuncIndentBody Row Col
+    deriving (Show)
 
 -- | Match Expression
 data Case
@@ -227,6 +241,7 @@ data Case
     | CaseIndentArrow Row Col
     | CaseIndentBranch Row Col
     | CasePatternAlignment Word16 Row Col
+    deriving (Show)
 
 -- | If Expression
 data If
@@ -244,6 +259,7 @@ data If
     | IfIndentThenBranch Row Col
     | IfIndentElseBranch Row Col
     | IfIndentElse Row Col
+    deriving (Show)
 
 -- | Let Expression
 data Let
@@ -257,6 +273,7 @@ data Let
     | LetIndentDef Row Col
     | LetIndentIn Row Col
     | LetIndentBody Row Col
+    deriving (Show)
 
 -- | Def Expression
 data Def
@@ -271,6 +288,7 @@ data Def
     | DefIndentType Row Col
     | DefIndentBody Row Col
     | DefAlignment Word16 Row Col
+    deriving (Show)
 
 -- | Destructure Expression
 data Destruct
@@ -280,6 +298,7 @@ data Destruct
     | DestructBody Expr Row Col
     | DestructIndentEquals Row Col
     | DestructIndentBody Row Col
+    deriving (Show)
 
 -- PATTERNS
 
@@ -300,6 +319,7 @@ data Pattern
     | --
       PIndentStart Row Col
     | PIndentAlias Row Col
+    deriving (Show)
 
 -- | Record Pattern
 data PRecord
@@ -311,6 +331,7 @@ data PRecord
       PRecordIndentOpen Row Col
     | PRecordIndentEnd Row Col
     | PRecordIndentField Row Col
+    deriving (Show)
 
 -- Tuple Pattern
 data PTuple
@@ -322,6 +343,7 @@ data PTuple
       PTupleIndentEnd Row Col
     | PTupleIndentExpr1 Row Col
     | PTupleIndentExprN Row Col
+    deriving (Show)
 
 -- List Pattern
 data PList
@@ -333,6 +355,7 @@ data PList
       PListIndentOpen Row Col
     | PListIndentEnd Row Col
     | PListIndentExpr Row Col
+    deriving (Show)
 
 -- TYPES
 
@@ -345,6 +368,7 @@ data Type
     | TSpace Space Row Col
     | --
       TIndentStart Row Col
+    deriving (Show)
 
 -- | Record Type
 data TRecord
@@ -362,6 +386,7 @@ data TRecord
     | TRecordIndentColon Row Col
     | TRecordIndentType Row Col
     | TRecordIndentEnd Row Col
+    deriving (Show)
 
 -- | Tuple Type
 data TTuple
@@ -373,6 +398,7 @@ data TTuple
       TTupleIndentType1 Row Col
     | TTupleIndentTypeN Row Col
     | TTupleIndentEnd Row Col
+    deriving (Show)
 
 -- LITERALS
 
@@ -381,18 +407,21 @@ data Char
     = CharEndless
     | CharEscape Escape
     | CharNotString Word16
+    deriving (Show)
 
 -- | String Literal
 data String
     = StringEndless_Single
     | StringEndless_Multi
     | StringEscape Escape
+    deriving (Show)
 
 data Escape
     = EscapeUnknown
     | BadUnicodeFormat Word16
     | BadUnicodeCode Word16
     | BadUnicodeLength Word16 Int Int
+    deriving (Show)
 
 -- | Number Literal
 data Number
@@ -400,9 +429,11 @@ data Number
     | NumberDot Int
     | NumberHexDigit
     | NumberNoLeadingZero
+    deriving (Show)
 
 -- extra
 
 data Space
     = HasTab
     | EndlessMultiComment
+    deriving (Show)

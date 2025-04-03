@@ -18,10 +18,10 @@ fmt:
 
     fourmolu -i .
 
-test:
+test *args:
     #!/usr/bin/env bash
 
-    cabal test
+    cabal test -- {{args}}
 
 test-accept:
     #!/usr/bin/env bash

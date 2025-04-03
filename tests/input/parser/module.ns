@@ -1,0 +1,4 @@
+module Thing where
+
+stuff : Int
+stuff = 42

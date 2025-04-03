@@ -6,3 +6,4 @@ data BadOperator
     | BadArrow
     | BadEquals
     | BadHasType
+    deriving (Show)

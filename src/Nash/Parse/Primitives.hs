@@ -47,3 +47,4 @@ data Snippet
     , _offRow :: Row
     , _offCol :: Col
     }
+    deriving (Show)
