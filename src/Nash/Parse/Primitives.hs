@@ -49,6 +49,39 @@ data Snippet
     }
     deriving (Show)
 
+{-# INLINE getPosition #-}
+getPosition :: Parser x A.Position
+getPosition =
+    Parser $ \state@(State _ _ _ _ row col) _ eok _ _ ->
+        eok (A.Position row col) state
+
+-- ONE OF WITH FALLBACK
+
+{-# INLINE oneOfWithFallback #-}
+oneOfWithFallback :: [Parser x a] -> a -> Parser x a -- PERF is this function okay? Worried about allocation/laziness with fallback values.
+oneOfWithFallback parsers fallback =
+    Parser $ \state cok eok cerr _ ->
+        oowfHelp state cok eok cerr parsers fallback
+
+oowfHelp ::
+    State ->
+    (a -> State -> b) ->
+    (a -> State -> b) ->
+    (Row -> Col -> (Row -> Col -> x) -> b) ->
+    [Parser x a] ->
+    a ->
+    b
+oowfHelp state cok eok cerr parsers fallback =
+    case parsers of
+        [] ->
+            eok fallback state
+        Parser parser : parsers' ->
+            let
+                eerr' _ _ _ =
+                    oowfHelp state cok eok cerr parsers' fallback
+             in
+                parser state cok eok cerr eerr'
+
 -- FROM BYTESTRING
 fromByteString :: Parser x a -> (Row -> Col -> x) -> B.ByteString -> Either x a
 fromByteString (Parser parser) toBadEnd (B.PS fptr offset length) =
@@ -72,3 +105,23 @@ toOk toBadEnd !a (State _ pos end _ row col) =
 toErr :: Row -> Col -> (Row -> Col -> x) -> Either x a
 toErr row col toError =
     Left (toError row col)
+
+-- LOW-LEVEL CHECKS
+
+unsafeIndex :: Ptr Word8 -> Word8
+unsafeIndex ptr =
+    B.accursedUnutterablePerformIO (peek ptr)
+
+{-# INLINE isWord #-}
+isWord :: Ptr Word8 -> Ptr Word8 -> Word8 -> Bool
+isWord pos end word =
+    pos < end && unsafeIndex pos == word
+
+getCharWidth :: Word8 -> Int
+getCharWidth word
+    | word < 0x80 = 1
+    | word < 0xc0 = error "Need UTF-8 encoded input. Ran into unrecognized bits."
+    | word < 0xe0 = 2
+    | word < 0xf0 = 3
+    | word < 0xf8 = 4
+    | True = error "Need UTF-8 encoded input. Ran into unrecognized bits."

@@ -75,6 +75,7 @@ library
     Nash.Parse.Declaration
     Nash.Parse.Module
     Nash.Parse.Primitives
+    Nash.Parse.Space
     Nash.Parse.Symbol
     Nash.Reporting.Annotation
     Nash.Reporting.Doc
