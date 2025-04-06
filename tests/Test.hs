@@ -1,10 +1,12 @@
 module Main where
 
 import Data.ByteString qualified as BS
+import Data.Text.Lazy.IO as TL (writeFile)
 import Nash.Parse.Module qualified as M
 import System.Directory (createDirectoryIfMissing)
 import Test.Tasty
 import Test.Tasty.Golden
+import Text.Pretty.Simple (pShowNoColor)
 
 main :: IO ()
 main = defaultMain tests
@@ -30,7 +32,7 @@ goldenParse name base =
             let result = M.fromByteString M.Application input
 
             let output = case result of
-                    Right m -> show m -- Like {:#?}
-                    Left e -> show e
+                    Right m -> pShowNoColor m -- Like {:#?}
+                    Left e -> pShowNoColor e
 
-            writeFile ("tests/output/parser/" ++ base ++ ".out") output
+            TL.writeFile ("tests/output/parser/" ++ base ++ ".out") output

@@ -169,7 +169,9 @@ test-suite nash-tests
     , bytestring
     , directory
     , nash
+    , pretty-simple
     , tasty         >=1.4
     , tasty-golden  >=2.3
+    , text
 
   default-language: GHC2021
