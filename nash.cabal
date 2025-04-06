@@ -72,6 +72,7 @@ library
     Nash.Cmd
     Nash.ModuleName
     Nash.Package
+    Nash.Parse.Declaration
     Nash.Parse.Module
     Nash.Parse.Primitives
     Nash.Parse.Symbol

@@ -48,3 +48,27 @@ data Snippet
     , _offCol :: Col
     }
     deriving (Show)
+
+-- FROM BYTESTRING
+fromByteString :: Parser x a -> (Row -> Col -> x) -> B.ByteString -> Either x a
+fromByteString (Parser parser) toBadEnd (B.PS fptr offset length) =
+    B.accursedUnutterablePerformIO $
+        let
+            toOk' = toOk toBadEnd
+            !pos = plusPtr (unsafeForeignPtrToPtr fptr) offset
+            !end = plusPtr pos length
+            !result = parser (State fptr pos end 0 1 1) toOk' toOk' toErr toErr
+         in
+            do
+                touchForeignPtr fptr
+                return result
+
+toOk :: (Row -> Col -> x) -> a -> State -> Either x a
+toOk toBadEnd !a (State _ pos end _ row col) =
+    if pos == end
+        then Right a
+        else Left (toBadEnd row col)
+
+toErr :: Row -> Col -> (Row -> Col -> x) -> Either x a
+toErr row col toError =
+    Left (toError row col)
