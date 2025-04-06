@@ -5,7 +5,6 @@ import Nash.Parse.Module qualified as M
 import System.Directory (createDirectoryIfMissing)
 import Test.Tasty
 import Test.Tasty.Golden
-import Text.Show.Pretty (ppShow)
 
 main :: IO ()
 main = defaultMain tests
@@ -31,7 +30,7 @@ goldenParse name base =
             let result = M.fromByteString M.Application input
 
             let output = case result of
-                    Right m -> ppShow m
-                    Left e -> ppShow e
+                    Right m -> show m -- Like {:#?}
+                    Left e -> show e
 
             writeFile ("tests/output/parser/" ++ base ++ ".out") output
