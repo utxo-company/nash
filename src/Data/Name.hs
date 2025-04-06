@@ -78,12 +78,19 @@ import GHC.Exts (
     Int (I#),
     MutableByteArray#,
     Ptr,
+    copyByteArray#,
+    indexWord8Array#,
     isTrue#,
+    leWord#,
     newByteArray#,
     sizeofByteArray#,
     unsafeFreezeByteArray#,
+    word8ToWord#,
+    wordToWord8#,
+    writeWord8Array#,
+    (+#),
+    (-#),
  )
-import GHC.Prim
 import GHC.ST (ST (ST), runST)
 import GHC.Word (Word8 (W8#))
 import Prelude hiding (length, maybe, negate)
