@@ -2,11 +2,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UnboxedTuples #-}
 
-module Nash.Parse.Space where
+module Nash.Parse.Space (
+    Parser,
+    --
+    chomp,
+    chompAndCheckIndent,
+    --
+    checkIndent,
+    checkAligned,
+    checkFreshLine,
+    --
+    docComment,
+) where
 
 import Data.Word (Word16, Word8)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Foreign.Ptr (Ptr, minusPtr, plusPtr)
+
+import Nash.Ast.Source qualified as Src
 import Nash.Parse.Primitives (Col, Row)
 import Nash.Parse.Primitives qualified as P
 import Nash.Reporting.Annotation qualified as A
@@ -30,12 +43,49 @@ chomp toError =
                 HasTab -> cerr newRow newCol (toError E.HasTab)
                 EndlessMultiComment -> cerr newRow newCol (toError E.EndlessMultiComment)
 
+-- CHECKS -- to be called right after a `chomp`
+
+checkIndent :: A.Position -> (Row -> Col -> x) -> P.Parser x ()
+checkIndent (A.Position endRow endCol) toError =
+    P.Parser $ \state@(P.State _ _ _ indent _ col) _ eok _ eerr ->
+        if col > indent && col > 1
+            then eok () state
+            else eerr endRow endCol toError
+
+checkAligned :: (Word16 -> Row -> Col -> x) -> P.Parser x ()
+checkAligned toError =
+    P.Parser $ \state@(P.State _ _ _ indent row col) _ eok _ eerr ->
+        if col == indent
+            then eok () state
+            else eerr row col (toError indent)
+
 checkFreshLine :: (Row -> Col -> x) -> P.Parser x ()
 checkFreshLine toError =
     P.Parser $ \state@(P.State _ _ _ _ row col) _ eok _ eerr ->
         if col == 1
             then eok () state
             else eerr row col toError
+
+-- CHOMP AND CHECK
+
+chompAndCheckIndent :: (E.Space -> Row -> Col -> x) -> (Row -> Col -> x) -> P.Parser x ()
+chompAndCheckIndent toSpaceError toIndentError =
+    P.Parser $ \(P.State src pos end indent row col) cok _ cerr _ ->
+        let
+            (# status, newPos, newRow, newCol #) = eatSpaces pos end row col
+         in
+            case status of
+                Good ->
+                    if newCol > indent && newCol > 1
+                        then
+                            let
+                                !newState = P.State src newPos end indent newRow newCol
+                             in
+                                cok () newState
+                        else
+                            cerr row col toIndentError
+                HasTab -> cerr newRow newCol (toSpaceError E.HasTab)
+                EndlessMultiComment -> cerr newRow newCol (toSpaceError E.EndlessMultiComment)
 
 -- EAT SPACES
 
@@ -149,3 +199,37 @@ eatMultiCommentHelp pos end row col openComments =
                                             else
                                                 let !newPos = plusPtr pos (P.getCharWidth word)
                                                  in eatMultiCommentHelp newPos end row (col + 1) openComments
+
+-- DOCUMENTATION COMMENT
+
+docComment :: (Row -> Col -> x) -> (E.Space -> Row -> Col -> x) -> P.Parser x Src.Comment
+docComment toExpectation toSpaceError =
+    P.Parser $ \(P.State src pos end indent row col) cok _ cerr eerr ->
+        let
+            !pos3 = plusPtr pos 3
+         in
+            if pos3 <= end
+                && P.unsafeIndex (pos) == 0x7B {- { -}
+                && P.unsafeIndex (plusPtr pos 1) == 0x2D {- - -}
+                && P.unsafeIndex (plusPtr pos 2) == 0x7C
+                then
+                    let
+                        !col3 = col + 3
+
+                        (# status, newPos, newRow, newCol #) =
+                            eatMultiCommentHelp pos3 end row col3 1
+                     in
+                        case status of
+                            MultiGood ->
+                                let
+                                    !off = minusPtr pos3 (unsafeForeignPtrToPtr src)
+                                    !len = minusPtr newPos pos3 - 2
+                                    !snippet = P.Snippet src off len row col3
+                                    !comment = Src.Comment snippet
+                                    !newState = P.State src newPos end indent newRow newCol
+                                 in
+                                    cok comment newState
+                            MultiTab -> cerr newRow newCol (toSpaceError E.HasTab)
+                            MultiEndless -> cerr row col (toSpaceError E.EndlessMultiComment)
+                else
+                    eerr row col toExpectation

@@ -1,4 +1,4 @@
-module Thing where
+module Thing exposing (stuff)
 
 stuff : Int
 stuff = 42

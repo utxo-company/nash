@@ -63,6 +63,7 @@ library
   exposed-modules:
     -- Data
     Data.Name
+    Data.NonEmptyList
     Data.Utf8
 
     -- Nash
@@ -70,18 +71,32 @@ library
     Nash.Ast.Source
     Nash.Ast.Utils.BinOp
     Nash.Cmd
+    Nash.Compiler.Imports
+    Nash.File
+    Nash.Json.Decode
+    Nash.Json.Encode
+    Nash.Json.String
     Nash.ModuleName
     Nash.Package
+    Nash.Version
     Nash.Parse.Declaration
+    Nash.Parse.Expression
+    Nash.Parse.Keyword
     Nash.Parse.Module
+    Nash.Parse.Number
+    Nash.Parse.Pattern
     Nash.Parse.Primitives
     Nash.Parse.Space
+    Nash.Parse.String
     Nash.Parse.Symbol
+    Nash.Parse.Type
+    Nash.Parse.Variable
     Nash.Reporting.Annotation
     Nash.Reporting.Doc
     Nash.Reporting.Error.Syntax
     Nash.Reporting.Render.Code
     Nash.Reporting.Report
+    Nash.Reporting.Suggest
     Nash.String
     Nash.Terminal
     Nash.Terminal.Build
@@ -97,16 +112,26 @@ library
     Nash.Terminal.Uplc.Fmt
     Nash.Terminal.Uplc.Shrink
 
+  other-modules:
+    Paths_nash
+
   build-depends:
     , base
     , binary
     , bytestring
     , cardano-crypto-class  ==2.1.5.0
+    , containers
+    , directory
+    , edit-distance
     , filepath
     , ghc-prim
     , optparse-applicative
     , plutus-core
+    , scientific
     , text
+    , time
+    , vector
+    , zip-archive
 
   hs-source-dirs:   src
   default-language: GHC2021
@@ -142,8 +167,9 @@ test-suite nash-tests
   build-depends:
     , base
     , bytestring
-    , nash
     , directory
+    , nash
+    , pretty-show
     , tasty         >=1.4
     , tasty-golden  >=2.3
 
