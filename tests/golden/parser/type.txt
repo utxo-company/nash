@@ -1,0 +1,101 @@
+Module
+    { _name = Just
+        ( At
+            ( Region
+                ( Position 1 6 )
+                ( Position 1 11 )
+            ) Thing
+        )
+    , _exports = At
+        ( Region
+            ( Position 1 17 )
+            ( Position 1 26 )
+        )
+        ( Explicit
+            [ Upper
+                ( At
+                    ( Region
+                        ( Position 1 18 )
+                        ( Position 1 21 )
+                    ) Idk
+                )
+                ( Public
+                    ( Region
+                        ( Position 1 22 )
+                        ( Position 1 24 )
+                    )
+                )
+            ]
+        )
+    , _docs = NoDocs
+        ( Region
+            ( Position 1 26 )
+            ( Position 3 1 )
+        )
+    , _imports = []
+    , _values = []
+    , _unions =
+        [ At
+            ( Region
+                ( Position 3 1 )
+                ( Position 4 7 )
+            )
+            ( Union
+                ( At
+                    ( Region
+                        ( Position 3 4 )
+                        ( Position 3 7 )
+                    ) Idk
+                )
+                [ At
+                    ( Region
+                        ( Position 3 6 )
+                        ( Position 3 7 )
+                    ) a
+                ]
+                [
+                    ( At
+                        ( Region
+                            ( Position 4 65533 )
+                            ( Position 4 0 )
+                        ) Nil
+                    , []
+                    )
+                ,
+                    ( At
+                        ( Region
+                            ( Position 4 65535 )
+                            ( Position 4 3 )
+                        ) Cons
+                    ,
+                        [ At
+                            ( Region
+                                ( Position 4 2 )
+                                ( Position 4 3 )
+                            ) ( TVar a )
+                        , At
+                            ( Region
+                                ( Position 4 3 )
+                                ( Position 4 6 )
+                            )
+                            ( TType
+                                ( Region
+                                    ( Position 4 3 )
+                                    ( Position 4 6 )
+                                ) Idk
+                                [ At
+                                    ( Region
+                                        ( Position 4 5 )
+                                        ( Position 4 6 )
+                                    ) ( TVar a )
+                                ]
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+    , _aliases = []
+    , _binops = []
+    , _effects = NoEffects
+    }

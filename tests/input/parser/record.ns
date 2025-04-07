@@ -1,0 +1,3 @@
+module Thing exposing (Datum)
+
+type alias Datum = { id : Int, value : ByteArray }

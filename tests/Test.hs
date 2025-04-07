@@ -16,12 +16,14 @@ tests =
     testGroup
         "Parser"
         [ goldenParse "module"
+        , goldenParse "type"
+        , goldenParse "record"
         ]
 
 goldenParse :: String -> TestTree
 goldenParse base =
     goldenVsFile
-        "Parse"
+        base
         ("tests/golden/parser/" ++ base ++ ".txt") -- Golden file
         ("tests/output/parser/" ++ base ++ ".out") -- Output file
         $ do
