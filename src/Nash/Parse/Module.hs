@@ -2,7 +2,6 @@ module Nash.Parse.Module where
 
 import Data.ByteString qualified as BS
 import Data.Name qualified as Name
-import Data.Utf8 qualified
 import Nash.Ast.Source qualified as Src
 import Nash.Compiler.Imports qualified as Imports
 import Nash.Package qualified as Pkg
@@ -27,18 +26,25 @@ fromByteString projectType source =
 data ProjectType
     = Package Pkg.Name
     | Application
+    | Snapshot
+
+isSnapshot :: ProjectType -> Bool
+isSnapshot Snapshot = True
+isSnapshot _ = False
 
 isCore :: ProjectType -> Bool
 isCore projectType =
     case projectType of
         Package pkg -> pkg == Pkg.core
         Application -> False
+        Snapshot -> False
 
 isKernel :: ProjectType -> Bool
 isKernel projectType =
     case projectType of
         Package pkg -> Pkg.isKernel pkg
         Application -> False
+        Snapshot -> False
 
 -- MODULE
 
@@ -54,7 +60,12 @@ chompModule :: ProjectType -> Parser E.Module Module
 chompModule projectType =
     do
         header <- chompHeader
-        imports <- chompImports (if isCore projectType then [] else Imports.defaults)
+        imports <-
+            chompImports
+                ( if isCore projectType || isSnapshot projectType
+                    then []
+                    else Imports.defaults
+                )
         infixes <- chompInfixes []
         decls <- specialize E.Declarations $ chompDecls []
         return (Module header imports infixes decls)
@@ -88,14 +99,19 @@ checkEffects projectType ports effects =
                     case projectType of
                         Package _ -> Left (E.NoPortsInPackage name)
                         Application -> Left (E.UnexpectedPort region)
+                        Snapshot -> Left (E.UnexpectedPort region)
         Ports region ->
             case projectType of
                 Package _ ->
                     Left (E.NoPortModulesInPackage region)
+                Snapshot ->
+                    handlePorts
                 Application ->
-                    case ports of
-                        [] -> Left (E.NoPorts region)
-                        _ : _ -> Right (Src.Ports ports)
+                    handlePorts
+            where
+                handlePorts = case ports of
+                    [] -> Right (Src.Ports ports)
+                    _ : _ -> Left (E.UnexpectedPort region)
         Manager region manager ->
             if isKernel projectType
                 then case ports of

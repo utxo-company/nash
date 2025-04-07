@@ -158,11 +158,11 @@ getKernel name@(Utf8.Utf8 ba#) =
                in
                 ST $ \s ->
                     case newByteArray# size# s of
-                        (# s, mba# #) ->
-                            case copyByteArray# ba# 11# mba# 0# size# s of
-                                s ->
-                                    case unsafeFreezeByteArray# mba# s of
-                                        (# s, ba# #) -> (# s, Utf8.Utf8 ba# #)
+                        (# s', mba# #) ->
+                            case copyByteArray# ba# 11# mba# 0# size# s' of
+                                s'' ->
+                                    case unsafeFreezeByteArray# mba# s'' of
+                                        (# s''', ba'# #) -> (# s''', Utf8.Utf8 ba'# #)
             )
         )
 
@@ -312,17 +312,17 @@ fromManyNames names =
                 runST
                     ( ST $ \s ->
                         case newByteArray# (len# +# 3#) s of
-                            (# s, mba# #) ->
-                                case writeWord8Array# mba# 0# (wordToWord8# 0x5F## {-_-}) s of
-                                    s ->
-                                        case writeWord8Array# mba# 1# (wordToWord8# 0x4D## {-M-}) s of
-                                            s ->
-                                                case writeWord8Array# mba# 2# (wordToWord8# 0x24##) s of
-                                                    s ->
-                                                        case copyByteArray# ba# 0# mba# 3# len# s of
-                                                            s ->
-                                                                case unsafeFreezeByteArray# mba# s of
-                                                                    (# s, ba# #) -> (# s, Utf8.Utf8 ba# #)
+                            (# s2, mba# #) ->
+                                case writeWord8Array# mba# 0# (wordToWord8# 0x5F## {-_-}) s2 of
+                                    s3 ->
+                                        case writeWord8Array# mba# 1# (wordToWord8# 0x4D## {-M-}) s3 of
+                                            s4 ->
+                                                case writeWord8Array# mba# 2# (wordToWord8# 0x24##) s4 of
+                                                    s5 ->
+                                                        case copyByteArray# ba# 0# mba# 3# len# s5 of
+                                                            s6 ->
+                                                                case unsafeFreezeByteArray# mba# s6 of
+                                                                    (# s7, ba2# #) -> (# s7, Utf8.Utf8 ba2# #)
                     )
 
 {-# NOINLINE blank #-}
@@ -333,17 +333,17 @@ blank =
 -- FROM WORDS
 
 fromWords :: [Word8] -> Name
-fromWords words =
+fromWords words' =
     runST
         ( do
-            mba <- newByteArray (List.length words)
-            writeWords mba 0 words
+            mba <- newByteArray (List.length words')
+            writeWords mba 0 words'
             freeze mba
         )
 
 writeWords :: MBA s -> Int -> [Word8] -> ST s ()
-writeWords !mba !i words =
-    case words of
+writeWords !mba !i words' =
+    case words' of
         [] ->
             return ()
         w : ws ->
@@ -362,15 +362,15 @@ sepBy (W8# sep#) (Utf8.Utf8 ba1#) (Utf8.Utf8 ba2#) =
         runST
             ( ST $ \s ->
                 case newByteArray# (len1# +# len2# +# 1#) s of
-                    (# s, mba# #) ->
-                        case copyByteArray# ba1# 0# mba# 0# len1# s of
-                            s ->
-                                case writeWord8Array# mba# len1# sep# s of
-                                    s ->
-                                        case copyByteArray# ba2# 0# mba# (len1# +# 1#) len2# s of
-                                            s ->
-                                                case unsafeFreezeByteArray# mba# s of
-                                                    (# s, ba# #) -> (# s, Utf8.Utf8 ba# #)
+                    (# s2, mba# #) ->
+                        case copyByteArray# ba1# 0# mba# 0# len1# s2 of
+                            s3 ->
+                                case writeWord8Array# mba# len1# sep# s3 of
+                                    s4 ->
+                                        case copyByteArray# ba2# 0# mba# (len1# +# 1#) len2# s4 of
+                                            s5 ->
+                                                case unsafeFreezeByteArray# mba# s5 of
+                                                    (# s6, ba# #) -> (# s6, Utf8.Utf8 ba# #)
             )
 
 -- PRIMITIVES
@@ -383,28 +383,28 @@ newByteArray :: Int -> ST s (MBA s)
 newByteArray (I# len#) =
     ST $ \s ->
         case newByteArray# len# s of
-            (# s, mba# #) -> (# s, MBA# mba# #)
+            (# s2, mba# #) -> (# s2, MBA# mba# #)
 
 {-# INLINE freeze #-}
 freeze :: MBA s -> ST s Name
 freeze (MBA# mba#) =
     ST $ \s ->
         case unsafeFreezeByteArray# mba# s of
-            (# s, ba# #) -> (# s, Utf8.Utf8 ba# #)
+            (# s3, ba# #) -> (# s3, Utf8.Utf8 ba# #)
 
 {-# INLINE writeWord8 #-}
 writeWord8 :: MBA s -> Int -> Word8 -> ST s ()
 writeWord8 (MBA# mba#) (I# offset#) (W8# w#) =
     ST $ \s ->
         case writeWord8Array# mba# offset# w# s of
-            s -> (# s, () #)
+            s2 -> (# s2, () #)
 
 {-# INLINE copyToMBA #-}
 copyToMBA :: Name -> MBA s -> ST s ()
 copyToMBA (Utf8.Utf8 ba#) (MBA# mba#) =
     ST $ \s ->
         case copyByteArray# ba# 0# mba# 0# (sizeofByteArray# ba#) s of
-            s -> (# s, () #)
+            s2 -> (# s2, () #)
 
 -- COMMON NAMES
 

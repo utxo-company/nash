@@ -14,14 +14,14 @@ main = defaultMain tests
 tests :: TestTree
 tests =
     testGroup
-        "Parser Tests"
-        [ goldenParse "Parse module" "module"
+        "Parser"
+        [ goldenParse "module"
         ]
 
-goldenParse :: String -> String -> TestTree
-goldenParse name base =
+goldenParse :: String -> TestTree
+goldenParse base =
     goldenVsFile
-        name
+        "Parse"
         ("tests/golden/parser/" ++ base ++ ".txt") -- Golden file
         ("tests/output/parser/" ++ base ++ ".out") -- Output file
         $ do
@@ -29,7 +29,7 @@ goldenParse name base =
 
             input <- BS.readFile ("tests/input/parser/" ++ base ++ ".ns")
 
-            let result = M.fromByteString M.Application input
+            let result = M.fromByteString M.Snapshot input
 
             let output = case result of
                     Right m -> pShowNoColor m -- Like {:#?}

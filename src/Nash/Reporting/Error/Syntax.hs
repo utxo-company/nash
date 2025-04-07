@@ -5,7 +5,6 @@ module Nash.Reporting.Error.Syntax where
 import Data.Char qualified as Char
 import Data.Name qualified as Name
 import Data.Word (Word16)
-import Numeric (showHex)
 import Prelude hiding (Char, String)
 
 import Nash.ModuleName qualified as ModuleName
