@@ -1,69 +1,49 @@
-run *args:
-    #!/usr/bin/env bash
+# Run binaries
+run bin="nashc" *args:
+    @go run ./cmd/{{bin}}  -- {{args}}
 
-    cabal run nash -v0 -- {{args}}
+# Clean up modules
+tidy:
+    @echo "run: tidy"
 
-build:
-    #!/usr/bin/env bash
+    @go mod tidy
 
-    cabal build exe:nash
-
-release:
-    #!/usr/bin/env bash
-
-    cabal build exe:nash --ghc-options="-O2"
-
+# Formats the code
 fmt:
-    #!/usr/bin/env bash
+    @echo "run: formatter"
 
-    fourmolu -i .
+    @go fmt ./...
 
+    @golines -w --ignore-generated --chain-split-dots --max-len=80 --reformat-tags .
+
+# Run tests
 test *args:
-    #!/usr/bin/env bash
+    @echo "run: tests"
 
-    cabal test -- {{args}}
+    @go mod tidy
 
-test-accept:
-    #!/usr/bin/env bash
+    @go test -v -race {{args}} ./...
 
-    cabal test --test-option=--accept
+## Remove test cache
+clean:
+	@go clean -testcache
 
-# MacOS specific system dependencies
-setup:
-    #!/usr/bin/env bash
+	@rm -rf cmd/_out
 
-    brew install libsodium
-    brew install pkgconf
-    brew install secp256k1
+build *name:
+    #!/usr/bin/env sh
+    mkdir -p cmd/_out
 
-    echo "Installing blst"
+    if [ -n "{{name}}" ]; then
+        echo "build: {{name}}"
 
-    git clone https://github.com/supranational/blst.git
+        go build -o cmd/_out/{{name}} ./cmd/{{name}}
+    else
+        echo "build: all"
 
-    cd blst
+        go build -o cmd/_out ./cmd/...
+    fi
 
-    bash build.sh
-
-    sudo mkdir /usr/local/lib
-    sudo mkdir /usr/local/lib/pkgconfig
-    sudo mkdir /usr/local/include
-
-    sudo cp libblst.a /usr/local/lib
-    sudo cp bindings/blst.h bindings/blst_aux.h /usr/local/include
-
-    cat > /usr/local/lib/pkgconfig/libblst.pc << 'EOF'
-    prefix=/usr/local
-    exec_prefix=${prefix}
-    libdir=${exec_prefix}/lib
-    includedir=${prefix}/include
-
-    Name: blst
-    Description: Multilingual BLS12-381 signature library
-    Version: 0.3.10
-    Libs: -L${libdir} -lblst
-    Cflags: -I${includedir}
-    EOF
-
-    rm -rf blst
-
-    pkg-config --modversion libblst
+install:
+    go install github.com/segmentio/golines@latest
+    go install golang.org/x/tools/cmd/goimports@latest
