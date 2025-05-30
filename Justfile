@@ -1,6 +1,6 @@
-# Run binaries
-run bin="nashc" *args:
-    @go run ./cmd/{{bin}}  -- {{args}}
+# Run binary
+run *args:
+    @go run ./cmd/nashc {{args}}
 
 # Clean up modules
 tidy:
