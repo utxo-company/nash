@@ -1,4 +1,0 @@
-module Thing exposing (Idk(..))
-
-type Idk a
-    = Nil | Cons a (Idk a)
