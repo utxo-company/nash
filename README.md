@@ -31,6 +31,12 @@ import (
 
 modules defined with `~` at the start of the name behave like `index.ts` in typescript modules
 
+```
+export {someFunc} from ~/leaf
+
+export {someFunc} from @/tree
+```
+
 ### Defining types
 
 ```
