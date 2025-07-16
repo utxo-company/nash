@@ -29,6 +29,8 @@ import (
 )
 ```
 
+modules defined with `~` at the start of the name behave like `index.ts` in typescript modules
+
 ### Defining types
 
 ```
