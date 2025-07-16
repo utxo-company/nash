@@ -1,5 +1,5 @@
 # Run binary
-run *args:
+dev *args:
     @go run ./cmd/nashc {{args}}
 
 # Clean up modules
