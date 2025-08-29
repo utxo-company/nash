@@ -3,6 +3,7 @@ name = "nashc"
 version.workspace = true
 edition.workspace = true
 description = "Compiler for the nash programming language"
+homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 
