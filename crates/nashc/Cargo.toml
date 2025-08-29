@@ -1,0 +1,8 @@
+[package]
+name = "nashc"
+version.workspace = true
+edition.workspace = true
+description = "Compiler for the nash programming language"
+license.workspace = true
+
+[dependencies]
