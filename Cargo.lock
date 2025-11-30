@@ -3,7 +3,23 @@
 version = 4
 
 [[package]]
+name = "nash-ast"
+version = "0.1.0"
+
+[[package]]
+name = "nash-can"
+version = "0.1.0"
+
+[[package]]
+name = "nash-constrain"
+version = "0.1.0"
+
+[[package]]
 name = "nash-parse"
+version = "0.1.0"
+
+[[package]]
+name = "nash-solve"
 version = "0.1.0"
 
 [[package]]

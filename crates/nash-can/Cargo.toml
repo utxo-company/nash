@@ -1,8 +1,8 @@
 [package]
-name = "nash-parse"
+name = "nash-can"
 version.workspace = true
 edition.workspace = true
-description = "Parser for the nash programming language"
+description = "Canonicalize a nash source tree, resolving symbols, re-ordering definitions, and preparing a module for type inference."
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true

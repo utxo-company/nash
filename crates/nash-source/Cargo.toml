@@ -2,6 +2,7 @@
 name = "nash-source"
 version.workspace = true
 edition.workspace = true
+description = "Source AST for the nash programming language"
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true

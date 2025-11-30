@@ -1,8 +1,8 @@
 [package]
-name = "nash-parse"
+name = "nash-solve"
 version.workspace = true
 edition.workspace = true
-description = "Parser for the nash programming language"
+description = "The entry point of nash's type inference system. Implements type inference and specialization of traits."
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true

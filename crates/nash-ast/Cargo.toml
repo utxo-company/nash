@@ -1,8 +1,8 @@
 [package]
-name = "nash-parse"
+name = "nash-ast"
 version.workspace = true
 edition.workspace = true
-description = "Parser for the nash programming language"
+description = "Canonical AST for the nash programming language"
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true

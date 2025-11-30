@@ -1,0 +1,14 @@
+[package]
+name = "nash-constrain"
+version.workspace = true
+edition.workspace = true
+description = """
+Responsible for building the set of constraints that are used \
+during type inference of a program, and for gathering context \
+needed for pleasant error messages when a type error occurs.
+"""
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
