@@ -3,5 +3,13 @@
 version = 4
 
 [[package]]
+name = "nash-parse"
+version = "0.1.0"
+
+[[package]]
+name = "nash-source"
+version = "0.1.0"
+
+[[package]]
 name = "nashc"
 version = "0.1.0"
