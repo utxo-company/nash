@@ -2,6 +2,7 @@
 name = "nash-config"
 version.workspace = true
 edition.workspace = true
+description = "nash workspace and project config file"
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
