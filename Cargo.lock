@@ -11,6 +11,10 @@ name = "nash-can"
 version = "0.1.0"
 
 [[package]]
+name = "nash-config"
+version = "0.1.0"
+
+[[package]]
 name = "nash-constrain"
 version = "0.1.0"
 
