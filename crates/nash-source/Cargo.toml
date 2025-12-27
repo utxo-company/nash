@@ -8,3 +8,5 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+bumpalo.workspace = true
+nash-region.workspace = true

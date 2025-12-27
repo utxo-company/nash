@@ -12,6 +12,17 @@ license = "Apache-2.0"
 [workspace.dependencies]
 bumpalo = { version = "3.19.1", features = ["collections"] }
 
+# internal crates
+nash-ast = { path = "crates/nash-ast" }
+nash-can = { path = "crates/nash-can" }
+nash-config = { path = "crates/nash-config" }
+nash-constrain = { path = "crates/nash-constrain" }
+nash-parse = { path = "crates/nash-parse" }
+nash-region = { path = "crates/nash-region" }
+nash-solve = { path = "crates/nash-solve" }
+nash-source = { path = "crates/nash-source" }
+nashc = { path = "crates/nashc" }
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
