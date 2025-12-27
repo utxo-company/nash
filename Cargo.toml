@@ -9,6 +9,9 @@ homepage = "https://nash-script.dev"
 repository = "https://github.com/nash-script/compiler"
 license = "Apache-2.0"
 
+[workspace.dependencies]
+bumpalo = { version = "3.19.1", features = ["collections"] }
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"

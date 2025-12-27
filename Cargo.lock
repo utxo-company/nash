@@ -23,6 +23,10 @@ name = "nash-parse"
 version = "0.1.0"
 
 [[package]]
+name = "nash-region"
+version = "0.1.0"
+
+[[package]]
 name = "nash-solve"
 version = "0.1.0"
 

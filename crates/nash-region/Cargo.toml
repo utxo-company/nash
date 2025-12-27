@@ -1,0 +1,10 @@
+[package]
+name = "nash-region"
+version.workspace = true
+edition.workspace = true
+description = "nash source spans"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
