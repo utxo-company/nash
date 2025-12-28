@@ -1,5 +1,68 @@
 use nash_region::{Located, Region};
 
+pub struct Module<'a> {
+    pub name: &'a Option<Located<&'a str>>,
+    pub exports: &'a Located<Exposing<'a>>,
+    pub docs: &'a Docs<'a>,
+    pub imports: &'a [&'a Import<'a>],
+    pub values: &'a [&'a Located<Value<'a>>],
+    pub unions: &'a [&'a Located<Union<'a>>],
+    pub aliases: &'a [&'a Located<Alias<'a>>],
+    pub binops: &'a [&'a Located<Infix<'a>>],
+}
+
+pub struct Import<'a> {
+    pub import: &'a Located<&'a str>,
+    pub alias: &'a Option<&'a str>,
+    pub exposing: &'a Exposing<'a>,
+}
+
+pub struct Value<'a> {
+    pub name: &'a Located<&'a str>,
+    pub arguments: &'a [&'a Located<Pattern<'a>>],
+    pub body: &'a Located<Expr<'a>>,
+    pub annotation: &'a Option<Located<Type<'a>>>,
+}
+
+// type Maybe a
+//   = Just a
+//   | Nothing
+pub struct Union<'a> {
+    pub name: &'a Located<&'a str>,
+    // type vars
+    pub arguments: &'a [&'a Located<&'a str>],
+    pub ctors: &'a [&'a Ctor<'a>],
+}
+
+pub struct Ctor<'a> {
+    pub name: &'a Located<&'a str>,
+    pub arguments: &'a [&'a Located<Type<'a>>],
+}
+
+pub struct Alias<'a> {
+    pub name: &'a Located<&'a str>,
+    // type vars
+    pub arguments: &'a [&'a Located<&'a str>],
+    pub typ: &'a Located<Type<'a>>,
+}
+
+pub struct Infix<'a> {
+    pub op: &'a str,
+    pub associativity: &'a Associativity,
+    pub precedence: &'a Precedence,
+    pub name: &'a str,
+}
+
+#[derive(PartialEq, Eq)]
+pub enum Associativity {
+    Left,
+    None,
+    Right,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub struct Precedence(pub u16);
+
 pub enum Expr<'a> {
     Str(&'a str),
     Int(i128),
@@ -9,7 +72,7 @@ pub enum Expr<'a> {
     Op(&'a str),
     Negate(&'a Located<Expr<'a>>),
     BinOps(
-        &'a [(&'a Located<Expr<'a>>, &'a Located<&'a str>)],
+        &'a [&'a (&'a Located<Expr<'a>>, &'a Located<&'a str>)],
         &'a Located<Expr<'a>>,
     ),
     Lambda {
@@ -24,7 +87,7 @@ pub enum Expr<'a> {
         branches: &'a [&'a IfBranch<'a>],
         final_else: &'a Located<Expr<'a>>,
     },
-    Let(&'a [&'a Located<Expr<'a>>], &'a Located<Expr<'a>>),
+    Let(&'a [&'a Located<Def<'a>>], &'a Located<Expr<'a>>),
     Case {
         scrutinee: &'a Located<Expr<'a>>,
         arms: &'a [&'a CaseArm<'a>],
@@ -48,6 +111,16 @@ pub enum VarType {
 pub struct IfBranch<'a> {
     pub condition: &'a Located<Expr<'a>>,
     pub body: &'a Located<Expr<'a>>,
+}
+
+pub enum Def<'a> {
+    Define(
+        &'a Located<&'a str>,
+        &'a [&'a Located<Pattern<'a>>],
+        &'a Located<Expr<'a>>,
+        &'a Option<Located<Type<'a>>>,
+    ),
+    Destruct(&'a Located<Pattern<'a>>, &'a Located<Expr<'a>>),
 }
 
 pub struct CaseArm<'a> {
@@ -77,4 +150,54 @@ pub enum Pattern<'a> {
     Cons(&'a Located<Pattern<'a>>, &'a Located<Pattern<'a>>),
     Str(&'a str),
     Int(i128),
+}
+
+pub enum Type<'a> {
+    Lambda(&'a Located<Type<'a>>, &'a Located<Type<'a>>),
+    Var(&'a str),
+    Type(&'a Region, &'a str, &'a [&'a Located<Type<'a>>]),
+    TypeQual(&'a Region, &'a str, &'a str, &'a [&'a Located<Type<'a>>]),
+    Record(&'a [&'a FieldType<'a>], &'a Option<Located<&'a str>>),
+    Unit,
+    Tuple(
+        &'a Located<Type<'a>>,
+        &'a Located<Type<'a>>,
+        &'a [&'a Located<Type<'a>>],
+    ),
+}
+
+pub struct FieldType<'a> {
+    pub field: &'a Located<&'a str>,
+    pub typ: &'a Located<Type<'a>>,
+}
+
+pub enum Docs<'a> {
+    NoDocs(&'a Region),
+    YesDocs(&'a Comment<'a>, &'a [&'a (&'a str, &'a Comment<'a>)]),
+}
+
+pub struct Comment<'a>(pub &'a Snippet<'a>);
+
+pub struct Snippet<'a> {
+    pub data: &'a [u8], // already the relevant slice
+    // offset: usize,
+    // length: usize,
+    pub off_row: u16,
+    pub off_col: u16,
+}
+
+pub enum Exposing<'a> {
+    Open,
+    Explicit(&'a [&'a Exposed<'a>]),
+}
+
+pub enum Exposed<'a> {
+    Lower(&'a Located<&'a str>),
+    Upper(&'a Located<&'a str>, Privacy<'a>),
+    Operator(&'a Region, &'a str),
+}
+
+pub enum Privacy<'a> {
+    Public(&'a Region),
+    Private,
 }
