@@ -8,3 +8,10 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+bumpalo.workspace = true
+nash-region.workspace = true
+nash-source.workspace = true
+
+[dev-dependencies]
+indoc.workspace = true
+insta.workspace = true

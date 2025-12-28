@@ -11,6 +11,8 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 bumpalo = { version = "3.19.1", features = ["collections"] }
+indoc = "2"
+insta = { version = "1.43.1", features = ["yaml"] }
 
 # internal crates
 nash-ast = { path = "crates/nash-ast" }
@@ -22,6 +24,11 @@ nash-region = { path = "crates/nash-region" }
 nash-solve = { path = "crates/nash-solve" }
 nash-source = { path = "crates/nash-source" }
 nashc = { path = "crates/nashc" }
+
+# Optimize insta/similar in dev for faster diffs
+[profile.dev.package]
+insta.opt-level = 3
+similar.opt-level = 3
 
 # The profile that 'dist' will build with
 [profile.dist]
