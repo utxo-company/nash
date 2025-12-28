@@ -5,8 +5,8 @@
 use nash_region::{Located, Position};
 use nash_source::Expr;
 
-use crate::error;
 use crate::Parser;
+use crate::error;
 
 impl<'a> Parser<'a> {
     /// Parse a term (atomic expression).
@@ -22,12 +22,29 @@ impl<'a> Parser<'a> {
     ///         , ...
     ///         ]
     /// ```
-    ///
-    /// Currently only handles number literals.
     pub fn term(&mut self) -> Result<Located<Expr<'a>>, error::Expr<'a>> {
         let start = self.get_position();
 
-        self.one_of(error::Expr::Start, [|p: &mut Parser<'a>| p.number(start)])
+        self.one_of(
+            error::Expr::Start,
+            vec![
+                Box::new(|p: &mut Parser<'a>| p.string(start)),
+                Box::new(|p| p.number(start)),
+            ],
+        )
+    }
+
+    /// Parse a string expression.
+    ///
+    /// Mirrors Elm's `string` helper:
+    /// ```haskell
+    /// string start =
+    ///   do  str <- String.string E.Start E.String
+    ///       addEnd start (Src.Str str)
+    /// ```
+    fn string(&mut self, start: Position) -> Result<Located<Expr<'a>>, error::Expr<'a>> {
+        let s = self.string_literal(error::Expr::Start, error::Expr::String)?;
+        Ok(self.add_end(start, Expr::Str(s)))
     }
 
     /// Parse a number expression.
@@ -108,6 +125,21 @@ mod tests {
     #[test]
     fn expr_int_large() {
         assert_expr_snapshot!("123456789");
+    }
+
+    #[test]
+    fn expr_string_simple() {
+        assert_expr_snapshot!(r#""hello""#);
+    }
+
+    #[test]
+    fn expr_string_with_escape() {
+        assert_expr_snapshot!(r#""hello\nworld""#);
+    }
+
+    #[test]
+    fn expr_string_multi() {
+        assert_expr_snapshot!(r#""""multi-line""""#);
     }
 
     // =========================================================================

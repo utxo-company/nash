@@ -1,0 +1,13 @@
+---
+source: crates/nash-parse/src/string.rs
+description: "Code:\n\n\"\\u{41\""
+---
+String(
+    Escape(
+        BadUnicodeFormat(
+            4,
+        ),
+    ),
+    1,
+    3,
+)

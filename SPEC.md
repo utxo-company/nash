@@ -2,15 +2,16 @@
 
 ## Current State
 
-**Next task:** String literals (`string.rs`) and string expressions
+**Next task:** Character literals (`string.rs`) or Variables (`variable.rs`)
 
-Key reference: `elm/compiler/src/Parse/String.hs`
+Key reference: `elm/compiler/src/Parse/String.hs` (for char), `elm/compiler/src/Parse/Variable.hs`
 
 Current working files:
-- `crates/nash-parse/src/lib.rs` - Parser struct, `one_of` combinator
+- `crates/nash-parse/src/lib.rs` - Parser struct, `one_of` combinator (boxed closures)
 - `crates/nash-parse/src/number.rs` - `number_literal` with two-error-constructor pattern
-- `crates/nash-parse/src/expression.rs` - `term`, `number` (uses `one_of`)
-- `crates/nash-parse/src/error.rs` - Error hierarchy (has `StringError`, `Escape` ready)
+- `crates/nash-parse/src/string.rs` - `string_literal` (single/multi-line, escapes, unicode)
+- `crates/nash-parse/src/expression.rs` - `term`, `string`, `number` (uses `one_of`)
+- `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
 
@@ -45,8 +46,8 @@ AST types: `crates/nash-source/src/lib.rs`
 
 ### Literals
 - [x] Integer literals (`number.rs`)
-- [ ] String literals (single-line)
-- [ ] String literals (multi-line)
+- [x] String literals (single-line) (`string.rs`)
+- [x] String literals (multi-line) (`string.rs`)
 - [ ] Char literals
 
 ### Identifiers
@@ -80,7 +81,7 @@ AST types: `crates/nash-source/src/lib.rs`
 
 ### Expressions
 - [x] term / number (`expression.rs`)
-- [ ] term / string (next)
+- [x] term / string (`expression.rs`)
 - [ ] Variables
 - [ ] Function application
 - [ ] Lambda expressions
@@ -136,12 +137,20 @@ hex_int        = '0' ( 'x' | 'X' ) hex_digit { hex_digit } ;
 nonzero_digit  = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' ;
 hex_digit      = digit | 'a' | 'b' | 'c' | 'd' | 'e' | 'f'
                        | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' ;
+
+string_literal = single_string | multi_string ;
+single_string  = '"' { string_char | escape } '"' ;
+multi_string   = '"""' { any_char | escape } '"""' ;
+string_char    = (* any char except '"', '\', newline *) ;
+escape         = '\' ( 'n' | 'r' | 't' | '"' | '\'' | '\' | unicode_escape ) ;
+unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ hex_digit ] ] '}' ;
 ```
 
 ### Expressions
 
 ```ebnf
-term           = number | ... ;    (* more alternatives to come *)
+term           = string | number | ... ;
+string         = string_literal ;
 number         = number_literal ;  (* no floats in Nash *)
 ```
 

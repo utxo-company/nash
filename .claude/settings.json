@@ -7,7 +7,7 @@
     "allow": [
       "Bash(cargo check:*)",
       "Bash(cargo test:*)",
-      "Bash(cargo insta test:*)",
+      "Bash(cargo insta:*)",
       "Bash(cat:*)"
     ]
   }

@@ -4,6 +4,7 @@ use nash_region::{Located, Position, Region};
 pub mod error;
 mod expression;
 mod number;
+mod string;
 
 pub type Row = u16;
 pub type Col = u16;
@@ -146,21 +147,18 @@ impl<'a> Parser<'a> {
     /// # Example
     /// ```ignore
     /// parser.one_of(
-    ///     error::Expr::Start,  // Constructor: (Row, Col) -> Expr
-    ///     [
-    ///         |p| p.number(start),
-    ///         |p| p.string(start),
+    ///     error::Expr::Start,
+    ///     vec![
+    ///         Box::new(|p: &mut Parser| p.string(start)),
+    ///         Box::new(|p| p.number(start)),
     ///     ],
     /// )
     /// ```
-    pub fn one_of<T, E, F, const N: usize>(
+    pub fn one_of<T, E>(
         &mut self,
         to_error: impl FnOnce(Row, Col) -> E,
-        parsers: [F; N],
-    ) -> Result<T, E>
-    where
-        F: FnOnce(&mut Self) -> Result<T, E>,
-    {
+        parsers: Vec<Box<dyn FnOnce(&mut Self) -> Result<T, E> + '_>>,
+    ) -> Result<T, E> {
         let initial_state = self.save_state();
 
         for parser in parsers {
@@ -191,14 +189,11 @@ impl<'a> Parser<'a> {
     /// ```haskell
     /// oneOfWithFallback :: [Parser x a] -> a -> Parser x a
     /// ```
-    pub fn one_of_with_fallback<T, E, F, const N: usize>(
+    pub fn one_of_with_fallback<T, E>(
         &mut self,
-        parsers: [F; N],
+        parsers: Vec<Box<dyn FnOnce(&mut Self) -> Result<T, E> + '_>>,
         fallback: T,
-    ) -> Result<T, E>
-    where
-        F: FnOnce(&mut Self) -> Result<T, E>,
-    {
+    ) -> Result<T, E> {
         let initial_state = self.save_state();
 
         for parser in parsers {
