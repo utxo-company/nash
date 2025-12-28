@@ -1,0 +1,8 @@
+---
+source: crates/nash-parse/src/expression.rs
+description: "Code:\n\nabc"
+---
+Start(
+    1,
+    1,
+)

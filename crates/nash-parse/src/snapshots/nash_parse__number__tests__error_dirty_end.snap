@@ -1,0 +1,9 @@
+---
+source: crates/nash-parse/src/number.rs
+description: "Code:\n\n123abc"
+---
+Number(
+    End,
+    1,
+    4,
+)

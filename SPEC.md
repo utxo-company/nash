@@ -2,13 +2,37 @@
 
 ## Current State
 
-**Next task:** Implement integer literal parsing with proper error types
+**Next task:** String literals (`string.rs`) and string expressions
 
-Key files:
-- `crates/nash-parse/src/lib.rs` - Parser struct, stub `parse_int`
-- `crates/nash-parse/src/error.rs` - Error type hierarchy (ported from Elm)
-- `crates/nash-source/src/lib.rs` - AST types
-- `elm/compiler/src/Reporting/Error/Syntax.hs` - Reference for error types
+Key reference: `elm/compiler/src/Parse/String.hs`
+
+Current working files:
+- `crates/nash-parse/src/lib.rs` - Parser struct, `one_of` combinator
+- `crates/nash-parse/src/number.rs` - `number_literal` with two-error-constructor pattern
+- `crates/nash-parse/src/expression.rs` - `term`, `number` (uses `one_of`)
+- `crates/nash-parse/src/error.rs` - Error hierarchy (has `StringError`, `Escape` ready)
+
+## File Mappings
+
+Elm parser modules → Nash parser modules:
+
+| Elm (`elm/compiler/src/Parse/`) | Nash (`crates/nash-parse/src/`) |
+|---------------------------------|---------------------------------|
+| `Primitives.hs`                 | `lib.rs` (Parser struct)        |
+| `Module.hs`                     | `module.rs`                     |
+| `Declaration.hs`                | `declaration.rs`                |
+| `Expression.hs`                 | `expression.rs`                 |
+| `Pattern.hs`                    | `pattern.rs`                    |
+| `Type.hs`                       | `type.rs`                       |
+| `Number.hs`                     | `number.rs`                     |
+| `String.hs`                     | `string.rs`                     |
+| `Variable.hs`                   | `variable.rs`                   |
+| `Symbol.hs`                     | `symbol.rs`                     |
+| `Keyword.hs`                    | `keyword.rs`                    |
+| `Space.hs`                      | `space.rs`                      |
+| `Reporting/Error/Syntax.hs`     | `error.rs`                      |
+
+AST types: `crates/nash-source/src/lib.rs`
 
 ## Implementation Progress
 
@@ -17,9 +41,10 @@ Key files:
 - [x] Basic methods (peek, advance, position)
 - [x] Snapshot test infrastructure (insta macros)
 - [x] Error type hierarchy (from Elm's Syntax.hs) - `error.rs`
+- [x] `one_of` / `one_of_with_fallback` combinators
 
 ### Literals
-- [ ] Integer literals
+- [x] Integer literals (`number.rs`)
 - [ ] String literals (single-line)
 - [ ] String literals (multi-line)
 - [ ] Char literals
@@ -54,6 +79,8 @@ Key files:
 - [ ] Record types
 
 ### Expressions
+- [x] term / number (`expression.rs`)
+- [ ] term / string (next)
 - [ ] Variables
 - [ ] Function application
 - [ ] Lambda expressions
@@ -103,13 +130,19 @@ upper     = 'A' | ... | 'Z' ;
 ### Literals
 
 ```ebnf
-(* To be filled in as implemented *)
+number_literal = decimal_int | hex_int ;
+decimal_int    = nonzero_digit { digit } | '0' ;
+hex_int        = '0' ( 'x' | 'X' ) hex_digit { hex_digit } ;
+nonzero_digit  = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' ;
+hex_digit      = digit | 'a' | 'b' | 'c' | 'd' | 'e' | 'f'
+                       | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' ;
 ```
 
 ### Expressions
 
 ```ebnf
-(* To be filled in as implemented *)
+term           = number | ... ;    (* more alternatives to come *)
+number         = number_literal ;  (* no floats in Nash *)
 ```
 
 ### Patterns

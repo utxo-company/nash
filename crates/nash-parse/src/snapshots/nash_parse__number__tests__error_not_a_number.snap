@@ -1,0 +1,8 @@
+---
+source: crates/nash-parse/src/number.rs
+description: "Code:\n\nabc"
+---
+Expected(
+    1,
+    1,
+)

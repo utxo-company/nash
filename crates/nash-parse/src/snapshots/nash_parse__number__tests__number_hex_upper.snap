@@ -1,0 +1,5 @@
+---
+source: crates/nash-parse/src/number.rs
+description: "0xFF"
+---
+255

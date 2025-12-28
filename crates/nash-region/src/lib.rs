@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-#[derive(Clone, Eq, Copy, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Eq, Copy, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Located<T> {
     region: Region,
     value: T,
@@ -18,7 +18,7 @@ impl<T> Located<T> {
     }
 }
 
-#[derive(Clone, Eq, Copy, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Eq, Copy, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Region {
     start: Position,
     end: Position,
@@ -63,13 +63,17 @@ impl Region {
     }
 }
 
-#[derive(Clone, Eq, Copy, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, Copy, PartialEq, Hash)]
 pub struct Position {
     line: u16,
     column: u16,
 }
 
 impl Position {
+    pub const fn new(line: u16, column: u16) -> Self {
+        Self { line, column }
+    }
+
     pub const fn zero() -> Self {
         Self { line: 0, column: 0 }
     }

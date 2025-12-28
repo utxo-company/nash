@@ -1,9 +1,21 @@
 use bumpalo::Bump;
+use nash_region::{Located, Position, Region};
 
 pub mod error;
+mod expression;
+mod number;
 
 pub type Row = u16;
 pub type Col = u16;
+
+/// Saved parser state for backtracking.
+#[derive(Clone, Copy)]
+struct ParserState {
+    pos: usize,
+    indent: u16,
+    row: Row,
+    col: Col,
+}
 
 /// Parser for Nash source code.
 ///
@@ -52,6 +64,19 @@ impl<'a> Parser<'a> {
         (self.row, self.col)
     }
 
+    /// Get the current position as a `Position`.
+    #[inline]
+    pub fn get_position(&self) -> Position {
+        Position::new(self.row, self.col)
+    }
+
+    /// Create a `Located` value spanning from `start` to the current position.
+    #[inline]
+    pub fn add_end<T>(&self, start: Position, value: T) -> Located<T> {
+        let end = self.get_position();
+        Located::at(Region::new(start, end), value)
+    }
+
     /// Current row (1-indexed).
     #[inline]
     pub fn row(&self) -> Row {
@@ -80,6 +105,121 @@ impl<'a> Parser<'a> {
     #[inline]
     pub fn is_eof(&self) -> bool {
         self.pos >= self.src.len()
+    }
+
+    /// Save current parser state for backtracking.
+    #[inline]
+    fn save_state(&self) -> ParserState {
+        ParserState {
+            pos: self.pos,
+            indent: self.indent,
+            row: self.row,
+            col: self.col,
+        }
+    }
+
+    /// Restore parser state for backtracking.
+    #[inline]
+    fn restore_state(&mut self, state: ParserState) {
+        self.pos = state.pos;
+        self.indent = state.indent;
+        self.row = state.row;
+        self.col = state.col;
+    }
+
+    // -------------------------------------------------------------------------
+    // Combinators
+    // -------------------------------------------------------------------------
+
+    /// Try multiple parsers in order, returning the first success.
+    ///
+    /// Mirrors Elm's `oneOf`:
+    /// ```haskell
+    /// oneOf :: (Row -> Col -> x) -> [Parser x a] -> Parser x a
+    /// ```
+    ///
+    /// Key semantics:
+    /// - If a parser fails without consuming input, try the next one
+    /// - If a parser fails after consuming input, propagate the error (committed)
+    /// - If all parsers fail without consuming, call `to_error(row, col)`
+    ///
+    /// # Example
+    /// ```ignore
+    /// parser.one_of(
+    ///     error::Expr::Start,  // Constructor: (Row, Col) -> Expr
+    ///     [
+    ///         |p| p.number(start),
+    ///         |p| p.string(start),
+    ///     ],
+    /// )
+    /// ```
+    pub fn one_of<T, E, F, const N: usize>(
+        &mut self,
+        to_error: impl FnOnce(Row, Col) -> E,
+        parsers: [F; N],
+    ) -> Result<T, E>
+    where
+        F: FnOnce(&mut Self) -> Result<T, E>,
+    {
+        let initial_state = self.save_state();
+
+        for parser in parsers {
+            let before = self.save_state();
+            match parser(self) {
+                Ok(value) => return Ok(value),
+                Err(e) => {
+                    // Did we consume any input?
+                    if self.pos != before.pos {
+                        // Committed - propagate error
+                        return Err(e);
+                    }
+                    // No input consumed - restore and try next
+                    self.restore_state(before);
+                }
+            }
+        }
+
+        // All parsers failed without consuming - restore to initial and return error
+        self.restore_state(initial_state);
+        let (row, col) = self.position();
+        Err(to_error(row, col))
+    }
+
+    /// Like `one_of` but returns a fallback value if nothing matches.
+    ///
+    /// Mirrors Elm's `oneOfWithFallback`:
+    /// ```haskell
+    /// oneOfWithFallback :: [Parser x a] -> a -> Parser x a
+    /// ```
+    pub fn one_of_with_fallback<T, E, F, const N: usize>(
+        &mut self,
+        parsers: [F; N],
+        fallback: T,
+    ) -> Result<T, E>
+    where
+        F: FnOnce(&mut Self) -> Result<T, E>,
+    {
+        let initial_state = self.save_state();
+
+        for parser in parsers {
+            let before = self.save_state();
+            match parser(self) {
+                Ok(value) => return Ok(value),
+                Err(e) => {
+                    // Did we consume any input?
+                    if self.pos != before.pos {
+                        // Committed - propagate error
+                        return Err(e);
+                    }
+                    // No input consumed - restore and try next
+                    self.restore_state(before);
+                }
+            }
+        }
+
+        // All parsers failed without consuming - return fallback
+        self.restore_state(initial_state);
+        Ok(fallback)
     }
 
     // -------------------------------------------------------------------------
@@ -151,103 +291,11 @@ impl<'a> Parser<'a> {
     pub fn alloc_str(&self, s: &str) -> &'a str {
         self.bump.alloc_str(s)
     }
-
-    // -------------------------------------------------------------------------
-    // Parsing (stub to test snapshot infrastructure)
-    // -------------------------------------------------------------------------
-
-    /// Parse an integer literal.
-    ///
-    /// Minimal stub to test snapshot infrastructure.
-    /// Error type will be replaced with proper Elm-style errors.
-    pub fn parse_int(&mut self) -> Result<i128, ()> {
-        let start_pos = self.pos;
-
-        // Must start with a digit
-        if !matches!(self.peek(), Some(b) if b.is_ascii_digit()) {
-            return Err(());
-        }
-
-        // Consume all digits
-        while let Some(b) = self.peek() {
-            if b.is_ascii_digit() {
-                self.advance();
-            } else {
-                break;
-            }
-        }
-
-        // Parse the integer
-        let slice = &self.src[start_pos..self.pos];
-        let s = std::str::from_utf8(slice).expect("digits are valid utf8");
-        let value = s.parse::<i128>().expect("valid integer");
-
-        Ok(value)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // =========================================================================
-    // Snapshot Test Macros
-    // =========================================================================
-    //
-    // These macros provide a consistent way to write snapshot tests.
-    // Each macro:
-    // 1. Creates a bump arena
-    // 2. Allocates the source code in the arena
-    // 3. Creates a parser
-    // 4. Calls the relevant parse method
-    // 5. Snapshots the result with the source code in the description
-    //
-    // We have two variants per parse target:
-    // - `assert_X_snapshot!` - expects success, unwraps Ok, panics on Err
-    // - `assert_X_error_snapshot!` - expects failure, unwraps Err, panics on Ok
-    //
-    // As we add more modules (expr.rs, pattern.rs, etc.), each will define
-    // its own macros in its test submodule for proper namespacing.
-
-    /// Snapshot test macro for successful integer literal parsing.
-    /// Expects Ok, panics on Err.
-    macro_rules! assert_int_snapshot {
-        ($code:expr) => {{
-            let bump = Bump::new();
-            let src = bump.alloc_str(indoc::indoc!($code));
-            let mut parser = Parser::new(&bump, src.as_bytes());
-            let result = parser.parse_int().expect("expected successful parse");
-
-            insta::with_settings!({
-                description => indoc::indoc!($code),
-                omit_expression => true,
-            }, {
-                insta::assert_debug_snapshot!(result);
-            });
-        }};
-    }
-
-    /// Snapshot test macro for integer literal parse errors.
-    /// Expects Err, panics on Ok.
-    macro_rules! assert_int_error_snapshot {
-        ($code:expr) => {{
-            let bump = Bump::new();
-            let src = bump.alloc_str(indoc::indoc!($code));
-            let mut parser = Parser::new(&bump, src.as_bytes());
-            let result = parser.parse_int().expect_err("expected parse error");
-
-            insta::with_settings!({
-                description => indoc::indoc!($code),
-                omit_expression => true,
-            }, {
-                insta::assert_debug_snapshot!(result);
-            });
-        }};
-    }
-
-    // =========================================================================
-    // Unit Tests (non-snapshot)
-    // =========================================================================
 
     #[test]
     fn test_parser_new() {
@@ -288,24 +336,5 @@ mod tests {
         parser.advance();
         assert!(parser.is_eof());
         assert_eq!(parser.peek(), None);
-    }
-
-    // =========================================================================
-    // Snapshot Tests
-    // =========================================================================
-
-    #[test]
-    fn int_simple() {
-        assert_int_snapshot!("42");
-    }
-
-    #[test]
-    fn int_zero() {
-        assert_int_snapshot!("0");
-    }
-
-    #[test]
-    fn int_large() {
-        assert_int_snapshot!("123456789");
     }
 }

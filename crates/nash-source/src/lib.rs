@@ -63,6 +63,7 @@ pub enum Associativity {
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct Precedence(pub u16);
 
+#[derive(Debug)]
 pub enum Expr<'a> {
     Str(&'a str),
     Int(i128),
@@ -103,16 +104,19 @@ pub enum Expr<'a> {
     ),
 }
 
+#[derive(Debug)]
 pub enum VarType {
     LowVar,
     CapVar,
 }
 
+#[derive(Debug)]
 pub struct IfBranch<'a> {
     pub condition: &'a Located<Expr<'a>>,
     pub body: &'a Located<Expr<'a>>,
 }
 
+#[derive(Debug)]
 pub enum Def<'a> {
     Define(
         &'a Located<&'a str>,
@@ -123,16 +127,19 @@ pub enum Def<'a> {
     Destruct(&'a Located<Pattern<'a>>, &'a Located<Expr<'a>>),
 }
 
+#[derive(Debug)]
 pub struct CaseArm<'a> {
     pub pattern: &'a Located<Pattern<'a>>,
     pub body: &'a Located<Expr<'a>>,
 }
 
+#[derive(Debug)]
 pub struct FieldAssign<'a> {
     pub field: &'a Located<&'a str>,
     pub value: &'a Located<Expr<'a>>,
 }
 
+#[derive(Debug)]
 pub enum Pattern<'a> {
     Anything,
     Var(&'a str),
@@ -152,6 +159,7 @@ pub enum Pattern<'a> {
     Int(i128),
 }
 
+#[derive(Debug)]
 pub enum Type<'a> {
     Lambda(&'a Located<Type<'a>>, &'a Located<Type<'a>>),
     Var(&'a str),
@@ -166,6 +174,7 @@ pub enum Type<'a> {
     ),
 }
 
+#[derive(Debug)]
 pub struct FieldType<'a> {
     pub field: &'a Located<&'a str>,
     pub typ: &'a Located<Type<'a>>,
