@@ -48,8 +48,8 @@ pub struct Alias<'a> {
 
 pub struct Infix<'a> {
     pub op: &'a str,
-    pub associativity: &'a Associativity,
-    pub precedence: &'a Precedence,
+    pub associativity: Associativity,
+    pub precedence: Precedence,
     pub name: &'a str,
 }
 
@@ -158,8 +158,8 @@ pub enum Pattern<'a> {
         &'a Located<Pattern<'a>>,
         &'a [&'a Located<Pattern<'a>>],
     ),
-    Ctor(&'a Region, &'a str, &'a [&'a Located<Pattern<'a>>]),
-    CtorQual(&'a Region, &'a str, &'a str, &'a [&'a Located<Pattern<'a>>]),
+    Ctor(Region, &'a str, &'a [&'a Located<Pattern<'a>>]),
+    CtorQual(Region, &'a str, &'a str, &'a [&'a Located<Pattern<'a>>]),
     List(&'a [&'a Located<Pattern<'a>>]),
     Cons(&'a Located<Pattern<'a>>, &'a Located<Pattern<'a>>),
     Str(&'a str),
@@ -170,8 +170,8 @@ pub enum Pattern<'a> {
 pub enum Type<'a> {
     Lambda(&'a Located<Type<'a>>, &'a Located<Type<'a>>),
     Var(&'a str),
-    Type(&'a Region, &'a str, &'a [&'a Located<Type<'a>>]),
-    TypeQual(&'a Region, &'a str, &'a str, &'a [&'a Located<Type<'a>>]),
+    Type(Region, &'a str, &'a [&'a Located<Type<'a>>]),
+    TypeQual(Region, &'a str, &'a str, &'a [&'a Located<Type<'a>>]),
     Record(&'a [&'a FieldType<'a>], Option<&'a Located<&'a str>>),
     Unit,
     Tuple(
@@ -188,7 +188,7 @@ pub struct FieldType<'a> {
 }
 
 pub enum Docs<'a> {
-    NoDocs(&'a Region),
+    NoDocs(Region),
     YesDocs(&'a Comment<'a>, &'a [&'a (&'a str, &'a Comment<'a>)]),
 }
 
@@ -209,11 +209,11 @@ pub enum Exposing<'a> {
 
 pub enum Exposed<'a> {
     Lower(&'a Located<&'a str>),
-    Upper(&'a Located<&'a str>, Privacy<'a>),
-    Operator(&'a Region, &'a str),
+    Upper(&'a Located<&'a str>, Privacy),
+    Operator(Region, &'a str),
 }
 
-pub enum Privacy<'a> {
-    Public(&'a Region),
+pub enum Privacy {
+    Public(Region),
     Private,
 }

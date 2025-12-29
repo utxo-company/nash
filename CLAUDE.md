@@ -18,12 +18,30 @@ We use **bumpalo** for arena allocation:
 - All AST nodes are allocated in the arena
 - Source text is loaded into the arena first, so `&'a str` slices point into arena memory
 - Unified `'a` lifetime throughout - drop the arena, everything is freed
+- bumpalo does NOT call `Drop` on items - this is fine since we only store `Copy` types or references
 
 ```rust
 let bump = Bump::new();
 let src: &str = bump.alloc_str(&file_contents);
 let mut parser = Parser::new(&bump, src.as_bytes());
 ```
+
+### AST Type Guidelines
+
+**Inline small `Copy` types** - don't put them behind `&'a`:
+- Small enums (e.g., `VarType`, `Associativity`) - just store the value
+- Newtypes around primitives (e.g., `Precedence(u16)`) - just store the value
+- `Region` (8 bytes of integers) - same size as a pointer, no benefit to indirection
+
+**Use `&'a T` for**:
+- Large types
+- Recursive types (must break infinite size)
+- Slices (`&'a [T]`, `&'a str`)
+
+**Use `Option<&'a T>` not `&'a Option<T>`**:
+- Null pointer optimization makes `Option<&'a T>` the same size as `&'a T`
+- `None` is free (null pointer, no arena allocation)
+- Only allocates when `Some`
 
 ## Testing Strategy
 
