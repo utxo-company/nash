@@ -8,6 +8,7 @@ use nash_source::Expr;
 use crate::Parser;
 use crate::error;
 
+mod list;
 mod number;
 mod string;
 mod variable;
@@ -35,6 +36,7 @@ impl<'a> Parser<'a> {
                 Box::new(|p: &mut Parser<'a>| p.variable(start)),
                 Box::new(|p| p.string(start)),
                 Box::new(|p| p.number(start)),
+                Box::new(|p| p.list(start)),
             ],
         )
     }

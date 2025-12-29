@@ -5,6 +5,7 @@ pub mod error;
 mod expression;
 mod keyword;
 mod number;
+mod space;
 mod string;
 
 pub type Row = u16;
@@ -217,6 +218,120 @@ impl<'a> Parser<'a> {
         // All parsers failed without consuming - return fallback
         self.restore_state(initial_state);
         Ok(fallback)
+    }
+
+    /// Parse with error context wrapping.
+    ///
+    /// Mirrors Elm's `inContext`:
+    /// ```haskell
+    /// inContext :: (x -> Row -> Col -> y) -> Parser y start -> Parser x a -> Parser y a
+    /// ```
+    ///
+    /// 1. Saves the starting position
+    /// 2. Runs `start_parser` - if it fails without consuming, returns that error
+    /// 3. If start succeeds, runs `body_parser`
+    /// 4. If body fails, wraps the error using `add_context` at the original position
+    ///
+    /// The `add_context` closure receives the bump allocator so it can allocate wrapped errors.
+    ///
+    /// This is used to provide better error context, e.g., "error in list expression".
+    pub fn in_context<T, StartErr, BodyErr, ContextErr>(
+        &mut self,
+        add_context: impl FnOnce(&'a Bump, BodyErr, Row, Col) -> ContextErr,
+        start_parser: impl FnOnce(&mut Self) -> Result<(), StartErr>,
+        body_parser: impl FnOnce(&mut Self) -> Result<T, BodyErr>,
+    ) -> Result<T, ContextErr>
+    where
+        StartErr: Into<ContextErr>,
+    {
+        let (start_row, start_col) = self.position();
+
+        // Try to parse start token
+        match start_parser(self) {
+            Ok(()) => {
+                // Start succeeded, now parse body
+                match body_parser(self) {
+                    Ok(value) => Ok(value),
+                    Err(body_err) => {
+                        // Wrap body error with context at original position
+                        Err(add_context(self.bump, body_err, start_row, start_col))
+                    }
+                }
+            }
+            Err(start_err) => {
+                // Start failed - convert to context error type
+                Err(start_err.into())
+            }
+        }
+    }
+
+    /// Transform errors from one type to another with position context.
+    ///
+    /// Mirrors Elm's `specialize`:
+    /// ```haskell
+    /// specialize :: (x -> Row -> Col -> y) -> Parser x a -> Parser y a
+    /// ```
+    ///
+    /// Runs the parser and wraps any error with the context at the starting position.
+    /// The `add_context` closure receives the bump allocator so it can allocate wrapped errors.
+    pub fn specialize<T, InnerErr, OuterErr>(
+        &mut self,
+        add_context: impl FnOnce(&'a Bump, InnerErr, Row, Col) -> OuterErr,
+        parser: impl FnOnce(&mut Self) -> Result<T, InnerErr>,
+    ) -> Result<T, OuterErr> {
+        let (start_row, start_col) = self.position();
+
+        match parser(self) {
+            Ok(value) => Ok(value),
+            Err(inner_err) => Err(add_context(self.bump, inner_err, start_row, start_col)),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Single-byte parsing
+    // -------------------------------------------------------------------------
+
+    /// Parse a single expected byte.
+    ///
+    /// Mirrors Elm's `word1`:
+    /// ```haskell
+    /// word1 :: Word8 -> (Row -> Col -> x) -> Parser x ()
+    /// ```
+    ///
+    /// Returns `Ok(())` and advances if the byte matches.
+    /// Returns `Err` without consuming if it doesn't match.
+    #[inline]
+    pub fn word1<E>(&mut self, expected: u8, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        if self.peek() == Some(expected) {
+            self.advance();
+            Ok(())
+        } else {
+            let (row, col) = self.position();
+            Err(to_error(row, col))
+        }
+    }
+
+    /// Parse two expected consecutive bytes.
+    ///
+    /// Mirrors Elm's `word2`:
+    /// ```haskell
+    /// word2 :: Word8 -> Word8 -> (Row -> Col -> x) -> Parser x ()
+    /// ```
+    #[inline]
+    pub fn word2<E>(
+        &mut self,
+        b1: u8,
+        b2: u8,
+        to_error: impl FnOnce(Row, Col) -> E,
+    ) -> Result<(), E> {
+        if self.peek() == Some(b1) && self.peek_at(1) == Some(b2) {
+            self.advance();
+            self.advance();
+            Ok(())
+        } else {
+            let (row, col) = self.position();
+            Err(to_error(row, col))
+        }
     }
 
     // -------------------------------------------------------------------------
