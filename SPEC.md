@@ -2,17 +2,20 @@
 
 ## Current State
 
-**Next task:** Unit `()`, Tuples, Lists
+**Next task:** Records, Record update
 
 Current working files:
-- `crates/nash-parse/src/lib.rs` - Parser struct, `one_of` combinator (boxed closures)
+- `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
 - `crates/nash-parse/src/number.rs` - `number_literal` primitive
 - `crates/nash-parse/src/string.rs` - `string_literal` primitive
 - `crates/nash-parse/src/keyword.rs` - reserved words
+- `crates/nash-parse/src/space.rs` - whitespace, comments, indentation
 - `crates/nash-parse/src/expression/mod.rs` - `term` (uses `one_of`)
 - `crates/nash-parse/src/expression/number.rs` - `number` expression + tests
 - `crates/nash-parse/src/expression/string.rs` - `string` expression + tests
 - `crates/nash-parse/src/expression/variable.rs` - `variable`, `foreign_alpha` + tests
+- `crates/nash-parse/src/expression/list.rs` - `list` expression + tests
+- `crates/nash-parse/src/expression/tuple.rs` - `tuple`, unit, parens + tests
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -45,6 +48,12 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Snapshot test infrastructure (insta macros)
 - [x] Error type hierarchy (from Elm's Syntax.hs) - `error.rs`
 - [x] `one_of` / `one_of_with_fallback` combinators
+- [x] `in_context` / `specialize` for error wrapping
+- [x] `word1` / `word2` for byte matching
+- [x] Whitespace and comment handling (`space.rs`)
+- [x] Line comments (`--`)
+- [x] Multi-line comments (`{- -}`) with nesting
+- [x] Indentation checking
 
 ### Literals
 - [x] Integer literals (`number.rs`)
@@ -58,9 +67,9 @@ AST types: `crates/nash-source/src/lib.rs`
 - [ ] Operators
 
 ### Basic Expressions
-- [ ] Unit `()`
-- [ ] Tuples
-- [ ] Lists
+- [x] Unit `()` (`expression/tuple.rs`)
+- [x] Tuples (`expression/tuple.rs`)
+- [x] Lists (`expression/list.rs`)
 - [ ] Records
 - [ ] Record update
 
@@ -150,7 +159,7 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-term           = variable | string | number | ... ;
+term           = variable | string | number | list | tuple ;
 variable       = lower_var | upper_var | qualified_var ;
 lower_var      = lower { inner_char } ;
 upper_var      = upper { inner_char } ;
@@ -158,6 +167,8 @@ qualified_var  = upper { inner_char } '.' ( lower_var | upper_var | qualified_va
 inner_char     = lower | upper | digit | '_' ;
 string         = string_literal ;
 number         = number_literal ;  (* no floats in Nash *)
+list           = '[' [ expr { ',' expr } ] ']' ;
+tuple          = '(' ')' | '(' expr ')' | '(' expr ',' expr { ',' expr } ')' ;
 ```
 
 ### Patterns
