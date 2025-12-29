@@ -67,8 +67,15 @@ pub struct Precedence(pub u16);
 pub enum Expr<'a> {
     Str(&'a str),
     Int(i128),
-    Var(VarType, &'a str),
-    VarQual(VarType, &'a str, &'a str),
+    Var {
+        kind: VarType,
+        name: &'a str,
+    },
+    VarQual {
+        kind: VarType,
+        module: &'a str,
+        name: &'a str,
+    },
     List(&'a [&'a Located<Expr<'a>>]),
     Op(&'a str),
     Negate(&'a Located<Expr<'a>>),

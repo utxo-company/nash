@@ -3,6 +3,7 @@ use nash_region::{Located, Position, Region};
 
 pub mod error;
 mod expression;
+mod keyword;
 mod number;
 mod string;
 

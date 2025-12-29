@@ -2,15 +2,17 @@
 
 ## Current State
 
-**Next task:** Character literals (`string.rs`) or Variables (`variable.rs`)
-
-Key reference: `elm/compiler/src/Parse/String.hs` (for char), `elm/compiler/src/Parse/Variable.hs`
+**Next task:** Unit `()`, Tuples, Lists
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, `one_of` combinator (boxed closures)
-- `crates/nash-parse/src/number.rs` - `number_literal` with two-error-constructor pattern
-- `crates/nash-parse/src/string.rs` - `string_literal` (single/multi-line, escapes, unicode)
-- `crates/nash-parse/src/expression.rs` - `term`, `string`, `number` (uses `one_of`)
+- `crates/nash-parse/src/number.rs` - `number_literal` primitive
+- `crates/nash-parse/src/string.rs` - `string_literal` primitive
+- `crates/nash-parse/src/keyword.rs` - reserved words
+- `crates/nash-parse/src/expression/mod.rs` - `term` (uses `one_of`)
+- `crates/nash-parse/src/expression/number.rs` - `number` expression + tests
+- `crates/nash-parse/src/expression/string.rs` - `string` expression + tests
+- `crates/nash-parse/src/expression/variable.rs` - `variable`, `foreign_alpha` + tests
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -22,12 +24,12 @@ Elm parser modules → Nash parser modules:
 | `Primitives.hs`                 | `lib.rs` (Parser struct)        |
 | `Module.hs`                     | `module.rs`                     |
 | `Declaration.hs`                | `declaration.rs`                |
-| `Expression.hs`                 | `expression.rs`                 |
+| `Expression.hs`                 | `expression/`                   |
 | `Pattern.hs`                    | `pattern.rs`                    |
 | `Type.hs`                       | `type.rs`                       |
 | `Number.hs`                     | `number.rs`                     |
 | `String.hs`                     | `string.rs`                     |
-| `Variable.hs`                   | `variable.rs`                   |
+| `Variable.hs`                   | `expression/variable.rs`        |
 | `Symbol.hs`                     | `symbol.rs`                     |
 | `Keyword.hs`                    | `keyword.rs`                    |
 | `Space.hs`                      | `space.rs`                      |
@@ -48,12 +50,11 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Integer literals (`number.rs`)
 - [x] String literals (single-line) (`string.rs`)
 - [x] String literals (multi-line) (`string.rs`)
-- [ ] Char literals
 
 ### Identifiers
-- [ ] Lowercase variables
-- [ ] Uppercase variables (constructors)
-- [ ] Qualified names (Module.name)
+- [x] Lowercase variables (`expression/variable.rs`)
+- [x] Uppercase variables (constructors)
+- [x] Qualified names (Module.name)
 - [ ] Operators
 
 ### Basic Expressions
@@ -80,9 +81,9 @@ AST types: `crates/nash-source/src/lib.rs`
 - [ ] Record types
 
 ### Expressions
-- [x] term / number (`expression.rs`)
-- [x] term / string (`expression.rs`)
-- [ ] Variables
+- [x] term / number (`expression/number.rs`)
+- [x] term / string (`expression/string.rs`)
+- [x] term / variable (`expression/variable.rs`)
 - [ ] Function application
 - [ ] Lambda expressions
 - [ ] Let expressions
@@ -149,7 +150,12 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-term           = string | number | ... ;
+term           = variable | string | number | ... ;
+variable       = lower_var | upper_var | qualified_var ;
+lower_var      = lower { inner_char } ;
+upper_var      = upper { inner_char } ;
+qualified_var  = upper { inner_char } '.' ( lower_var | upper_var | qualified_var ) ;
+inner_char     = lower | upper | digit | '_' ;
 string         = string_literal ;
 number         = number_literal ;  (* no floats in Nash *)
 ```

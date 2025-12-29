@@ -1,9 +1,0 @@
----
-source: crates/nash-parse/src/number.rs
-description: "Code:\n\n007"
----
-Number(
-    NoLeadingZero,
-    1,
-    2,
-)

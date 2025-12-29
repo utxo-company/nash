@@ -45,8 +45,9 @@ description: "42"
 
 Run tests with:
 ```bash
-cargo insta test -p nash-parse
+cargo insta test
 cargo insta accept  # to accept new snapshots
+cargo insta test --unreferenced delete  # delete stale snapshots
 ```
 
 ## Progress Tracking

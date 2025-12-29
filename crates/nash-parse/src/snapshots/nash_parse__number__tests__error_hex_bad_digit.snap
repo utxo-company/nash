@@ -1,9 +1,0 @@
----
-source: crates/nash-parse/src/number.rs
-description: "Code:\n\n0xGG"
----
-Number(
-    HexDigit,
-    1,
-    3,
-)

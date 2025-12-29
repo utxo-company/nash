@@ -1,9 +1,0 @@
----
-source: crates/nash-parse/src/string.rs
-description: "Code:\n\n\"\"\"hello"
----
-String(
-    EndlessMulti,
-    1,
-    4,
-)
