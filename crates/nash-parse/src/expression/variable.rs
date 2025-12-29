@@ -21,7 +21,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn variable(
         &mut self,
         start: Position,
-    ) -> Result<Located<Expr<'a>>, error::Expr<'a>> {
+    ) -> Result<&'a Located<Expr<'a>>, error::Expr<'a>> {
         let expr = self.foreign_alpha(error::Expr::Start)?;
         Ok(self.add_end(start, expr))
     }

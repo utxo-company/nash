@@ -72,11 +72,12 @@ impl<'a> Parser<'a> {
         Position::new(self.row, self.col)
     }
 
-    /// Create a `Located` value spanning from `start` to the current position.
+    /// Create a `Located` value spanning from `start` to the current position,
+    /// allocated directly in the arena.
     #[inline]
-    pub fn add_end<T>(&self, start: Position, value: T) -> Located<T> {
+    pub fn add_end<T>(&self, start: Position, value: T) -> &'a Located<T> {
         let end = self.get_position();
-        Located::at(Region::new(start, end), value)
+        self.alloc(Located::at(Region::new(start, end), value))
     }
 
     /// Current row (1-indexed).

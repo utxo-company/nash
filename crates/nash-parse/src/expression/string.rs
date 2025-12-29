@@ -15,7 +15,7 @@ impl<'a> Parser<'a> {
     ///   do  str <- String.string E.Start E.String
     ///       addEnd start (Src.Str str)
     /// ```
-    pub(crate) fn string(&mut self, start: Position) -> Result<Located<Expr<'a>>, error::Expr<'a>> {
+    pub(crate) fn string(&mut self, start: Position) -> Result<&'a Located<Expr<'a>>, error::Expr<'a>> {
         let s = self.string_literal(error::Expr::Start, error::Expr::String)?;
         Ok(self.add_end(start, Expr::Str(s)))
     }

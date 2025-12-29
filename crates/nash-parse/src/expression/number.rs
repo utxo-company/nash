@@ -18,7 +18,7 @@ impl<'a> Parser<'a> {
     ///           Number.Int int -> Src.Int int
     ///           Number.Float float -> Src.Float float
     /// ```
-    pub(crate) fn number(&mut self, start: Position) -> Result<Located<Expr<'a>>, error::Expr<'a>> {
+    pub(crate) fn number(&mut self, start: Position) -> Result<&'a Located<Expr<'a>>, error::Expr<'a>> {
         let n = self.number_literal(error::Expr::Start, error::Expr::Number)?;
         Ok(self.add_end(start, Expr::Int(n)))
     }

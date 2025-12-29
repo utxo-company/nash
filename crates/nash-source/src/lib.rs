@@ -1,7 +1,7 @@
 use nash_region::{Located, Region};
 
 pub struct Module<'a> {
-    pub name: &'a Option<Located<&'a str>>,
+    pub name: Option<&'a Located<&'a str>>,
     pub exports: &'a Located<Exposing<'a>>,
     pub docs: &'a Docs<'a>,
     pub imports: &'a [&'a Import<'a>],
@@ -13,7 +13,7 @@ pub struct Module<'a> {
 
 pub struct Import<'a> {
     pub import: &'a Located<&'a str>,
-    pub alias: &'a Option<&'a str>,
+    pub alias: Option<&'a str>,
     pub exposing: &'a Exposing<'a>,
 }
 
@@ -21,7 +21,7 @@ pub struct Value<'a> {
     pub name: &'a Located<&'a str>,
     pub arguments: &'a [&'a Located<Pattern<'a>>],
     pub body: &'a Located<Expr<'a>>,
-    pub annotation: &'a Option<Located<Type<'a>>>,
+    pub annotation: Option<&'a Located<Type<'a>>>,
 }
 
 // type Maybe a
@@ -129,7 +129,7 @@ pub enum Def<'a> {
         &'a Located<&'a str>,
         &'a [&'a Located<Pattern<'a>>],
         &'a Located<Expr<'a>>,
-        &'a Option<Located<Type<'a>>>,
+        Option<&'a Located<Type<'a>>>,
     ),
     Destruct(&'a Located<Pattern<'a>>, &'a Located<Expr<'a>>),
 }
@@ -172,7 +172,7 @@ pub enum Type<'a> {
     Var(&'a str),
     Type(&'a Region, &'a str, &'a [&'a Located<Type<'a>>]),
     TypeQual(&'a Region, &'a str, &'a str, &'a [&'a Located<Type<'a>>]),
-    Record(&'a [&'a FieldType<'a>], &'a Option<Located<&'a str>>),
+    Record(&'a [&'a FieldType<'a>], Option<&'a Located<&'a str>>),
     Unit,
     Tuple(
         &'a Located<Type<'a>>,

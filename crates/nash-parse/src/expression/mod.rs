@@ -26,7 +26,7 @@ impl<'a> Parser<'a> {
     ///         , ...
     ///         ]
     /// ```
-    pub fn term(&mut self) -> Result<Located<Expr<'a>>, error::Expr<'a>> {
+    pub fn term(&mut self) -> Result<&'a Located<Expr<'a>>, error::Expr<'a>> {
         let start = self.get_position();
 
         self.one_of(
