@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Records, Record update
+**Next task:** Patterns (Wildcard, Variable, Constructor, Tuple, List, Record)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -13,9 +13,10 @@ Current working files:
 - `crates/nash-parse/src/expression/mod.rs` - `term` (uses `one_of`)
 - `crates/nash-parse/src/expression/number.rs` - `number` expression + tests
 - `crates/nash-parse/src/expression/string.rs` - `string` expression + tests
-- `crates/nash-parse/src/expression/variable.rs` - `variable`, `foreign_alpha` + tests
+- `crates/nash-parse/src/expression/variable.rs` - `variable`, `lower_name`, `upper_name`, `foreign_alpha` + tests
 - `crates/nash-parse/src/expression/list.rs` - `list` expression + tests
 - `crates/nash-parse/src/expression/tuple.rs` - `tuple`, unit, parens + tests
+- `crates/nash-parse/src/expression/record.rs` - `record`, record update + tests
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -70,8 +71,8 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Unit `()` (`expression/tuple.rs`)
 - [x] Tuples (`expression/tuple.rs`)
 - [x] Lists (`expression/list.rs`)
-- [ ] Records
-- [ ] Record update
+- [x] Records (`expression/record.rs`)
+- [x] Record update (`expression/record.rs`)
 
 ### Patterns
 - [ ] Wildcard `_`
@@ -159,7 +160,7 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-term           = variable | string | number | list | tuple ;
+term           = variable | string | number | list | tuple | record ;
 variable       = lower_var | upper_var | qualified_var ;
 lower_var      = lower { inner_char } ;
 upper_var      = upper { inner_char } ;
@@ -169,6 +170,9 @@ string         = string_literal ;
 number         = number_literal ;  (* no floats in Nash *)
 list           = '[' [ expr { ',' expr } ] ']' ;
 tuple          = '(' ')' | '(' expr ')' | '(' expr ',' expr { ',' expr } ')' ;
+record         = '{' '}' | '{' lower_var '=' expr { ',' field } '}'
+               | '{' lower_var '|' field { ',' field } '}' ;
+field          = lower_var '=' expr ;
 ```
 
 ### Patterns

@@ -1,0 +1,12 @@
+---
+source: crates/nash-parse/src/expression/record.rs
+description: "Code:\n\n{ X = 1 }"
+---
+Record(
+    Open(
+        1,
+        3,
+    ),
+    1,
+    1,
+)

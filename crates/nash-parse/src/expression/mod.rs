@@ -10,6 +10,7 @@ use crate::error;
 
 mod list;
 mod number;
+mod record;
 mod string;
 mod tuple;
 mod variable;
@@ -39,6 +40,7 @@ impl<'a> Parser<'a> {
                 Box::new(|p| p.number(start)),
                 Box::new(|p| p.list(start)),
                 Box::new(|p| p.tuple(start)),
+                Box::new(|p| p.record(start)),
             ],
         )
     }

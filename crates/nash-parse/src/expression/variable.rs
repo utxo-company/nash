@@ -1,15 +1,85 @@
 //! Variable expression parsing for Nash.
 //!
-//! Ported from Elm's `Parse/Variable.hs` (foreignAlpha).
+//! Ported from Elm's `Parse/Variable.hs`.
+//!
+//! Provides:
+//! - `lower_name` - parse a lowercase identifier (for field names, etc.)
+//! - `upper_name` - parse an uppercase identifier (for type names, etc.)
+//! - `foreign_alpha` - parse a possibly-qualified variable expression
 
 use nash_region::{Located, Position};
 use nash_source::{Expr, VarType};
 
-use crate::Parser;
 use crate::error;
 use crate::keyword;
+use crate::Parser;
 
 impl<'a> Parser<'a> {
+    // -------------------------------------------------------------------------
+    // Primitive name parsers (pub(crate) for reuse by record, pattern, etc.)
+    // -------------------------------------------------------------------------
+
+    /// Parse a lowercase name.
+    ///
+    /// Mirrors Elm's `Var.lower`:
+    /// ```haskell
+    /// lower :: (Row -> Col -> x) -> Parser x Name.Name
+    /// ```
+    ///
+    /// Parses `[a-z][a-zA-Z0-9_]*`, checks it's not a reserved word.
+    pub(crate) fn lower_name<E>(
+        &mut self,
+        to_error: impl FnOnce(u16, u16) -> E,
+    ) -> Result<&'a str, E> {
+        let (row, col) = self.position();
+        let start_pos = self.pos;
+
+        match self.peek() {
+            Some(b) if b.is_ascii_lowercase() => {
+                self.advance();
+                self.chomp_inner_chars();
+
+                let name = self.slice_from(start_pos);
+
+                if keyword::is_reserved(name) {
+                    return Err(to_error(row, col));
+                }
+
+                Ok(name)
+            }
+            _ => Err(to_error(row, col)),
+        }
+    }
+
+    /// Parse an uppercase name.
+    ///
+    /// Mirrors Elm's `Var.upper`:
+    /// ```haskell
+    /// upper :: (Row -> Col -> x) -> Parser x Name.Name
+    /// ```
+    ///
+    /// Parses `[A-Z][a-zA-Z0-9_]*`. No reserved word check for uppercase.
+    pub(crate) fn upper_name<E>(
+        &mut self,
+        to_error: impl FnOnce(u16, u16) -> E,
+    ) -> Result<&'a str, E> {
+        let (row, col) = self.position();
+        let start_pos = self.pos;
+
+        match self.peek() {
+            Some(b) if b.is_ascii_uppercase() => {
+                self.advance();
+                self.chomp_inner_chars();
+                Ok(self.slice_from(start_pos))
+            }
+            _ => Err(to_error(row, col)),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Expression-level variable parsing
+    // -------------------------------------------------------------------------
+
     /// Parse a variable expression.
     ///
     /// Mirrors Elm's `variable` in Expression.hs:
@@ -85,8 +155,12 @@ impl<'a> Parser<'a> {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Helper methods
+    // -------------------------------------------------------------------------
+
     /// Chomp inner characters of an identifier (a-z, A-Z, 0-9, _).
-    fn chomp_inner_chars(&mut self) {
+    pub(crate) fn chomp_inner_chars(&mut self) {
         loop {
             match self.peek() {
                 Some(b) if b.is_ascii_alphanumeric() || b == b'_' => {
@@ -98,7 +172,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Get a str slice from start_pos to current position.
-    fn slice_from(&self, start_pos: usize) -> &'a str {
+    pub(crate) fn slice_from(&self, start_pos: usize) -> &'a str {
         let bytes = &self.src[start_pos..self.pos];
         unsafe { std::str::from_utf8_unchecked(bytes) }
     }
