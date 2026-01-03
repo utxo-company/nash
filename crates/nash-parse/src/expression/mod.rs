@@ -9,6 +9,7 @@ use crate::error;
 use crate::Parser;
 
 mod accessor;
+mod lambda;
 mod list;
 mod number;
 mod record;
@@ -33,16 +34,27 @@ impl<'a> Parser<'a> {
     ///         ]
     /// ```
     ///
-    /// Currently implements: possiblyNegativeTerm + function application.
-    /// TODO: let, if, case, function, operators
+    /// Currently implements: lambda, possiblyNegativeTerm + function application.
+    /// TODO: let, if, case, operators
     pub fn expression(
         &mut self,
     ) -> Result<(&'a Located<Expr<'a>>, Position), error::Expr<'a>> {
         let start = self.get_position();
-        let expr = self.possibly_negative_term(start)?;
-        let end = self.get_position();
-        self.chomp(error::Expr::Space)?;
-        self.chomp_expr_end(start, expr, vec![], end)
+
+        self.one_of(
+            error::Expr::Start,
+            vec![
+                // Lambda: \args -> body
+                Box::new(|p: &mut Parser<'a>| p.lambda(start)),
+                // Term (possibly negated) with function application
+                Box::new(|p| {
+                    let expr = p.possibly_negative_term(start)?;
+                    let end = p.get_position();
+                    p.chomp(error::Expr::Space)?;
+                    p.chomp_expr_end(start, expr, vec![], end)
+                }),
+            ],
+        )
     }
 
     /// Handle function application (and later, binary operators).
