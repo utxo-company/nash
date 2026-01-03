@@ -83,25 +83,38 @@ impl<'a> Parser<'a> {
     ///           return revArgs
     ///     ]
     /// ```
+    ///
+    /// Note: Elm uses `:` (prepend) to build the list in reverse order, then
+    /// reverses at the end. We use `push` (append) to build in forward order,
+    /// so no reversal is needed.
     fn chomp_lambda_args(
         &mut self,
-        mut rev_args: Vec<&'a Located<nash_source::Pattern<'a>>>,
+        mut args: Vec<&'a Located<nash_source::Pattern<'a>>>,
     ) -> Result<Vec<&'a Located<nash_source::Pattern<'a>>>, Func<'a>> {
-        loop {
-            // Try to parse arrow first
-            if self.word2(b'-', b'>', Func::Arrow).is_ok() {
-                return Ok(rev_args);
-            }
+        // Clone for second closure - cheap since it's just a Vec of references
+        let args_for_arrow = args.clone();
 
-            // Otherwise parse another pattern arg
-            let arg = self.specialize(
-                |bump, e, r, c| Func::Arg(bump.alloc(e), r, c),
-                |p| p.pattern_term(),
-            )?;
-            rev_args.push(arg);
-
-            self.chomp_and_check_indent(Func::Space, Func::IndentArrow)?;
-        }
+        // Use one_of to match Elm's error behavior: fallback error is FuncArrow
+        self.one_of(
+            Func::Arrow,
+            vec![
+                // Try to parse another pattern arg (Elm tries this first)
+                Box::new(|p: &mut Parser<'a>| {
+                    let arg = p.specialize(
+                        |bump, e, r, c| Func::Arg(bump.alloc(e), r, c),
+                        |p| p.pattern_term(),
+                    )?;
+                    args.push(arg);
+                    p.chomp_and_check_indent(Func::Space, Func::IndentArrow)?;
+                    p.chomp_lambda_args(args)
+                }),
+                // Or parse the arrow to finish
+                Box::new(|p: &mut Parser<'a>| {
+                    p.word2(b'-', b'>', Func::Arrow)?;
+                    Ok(args_for_arrow)
+                }),
+            ],
+        )
     }
 }
 
