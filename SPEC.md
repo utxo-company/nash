@@ -34,7 +34,7 @@ Elm parser modules → Nash parser modules:
 | `Module.hs`                     | `module.rs`                     |
 | `Declaration.hs`                | `declaration.rs`                |
 | `Expression.hs`                 | `expression/`                   |
-| `Pattern.hs`                    | `pattern.rs`                    |
+| `Pattern.hs`                    | `pattern/`                      |
 | `Type.hs`                       | `type.rs`                       |
 | `Number.hs`                     | `number.rs`                     |
 | `String.hs`                     | `string.rs`                     |
