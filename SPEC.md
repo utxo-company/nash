@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Types (Type variables, Named types, Function types, Tuple types, Record types)
+**Next task:** Expressions (Function application, Lambda, Let, If, Case, Binary operators)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -22,6 +22,7 @@ Current working files:
 - `crates/nash-parse/src/pattern/record.rs` - `{ x, y, z }`
 - `crates/nash-parse/src/pattern/tuple.rs` - `()`, `(a, b)`
 - `crates/nash-parse/src/pattern/list.rs` - `[]`, `[a, b, c]`
+- `crates/nash-parse/src/type_.rs` - `type_term`, `type_expr` (variables, named, function, tuple, record)
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -35,7 +36,7 @@ Elm parser modules → Nash parser modules:
 | `Declaration.hs`                | `declaration.rs`                |
 | `Expression.hs`                 | `expression/`                   |
 | `Pattern.hs`                    | `pattern/`                      |
-| `Type.hs`                       | `type.rs`                       |
+| `Type.hs`                       | `type_.rs`                      |
 | `Number.hs`                     | `number.rs`                     |
 | `String.hs`                     | `string.rs`                     |
 | `Variable.hs`                   | `expression/variable.rs`        |
@@ -90,11 +91,11 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Cons patterns (`pattern/mod.rs`)
 
 ### Types
-- [ ] Type variables
-- [ ] Named types
-- [ ] Function types
-- [ ] Tuple types
-- [ ] Record types
+- [x] Type variables (`type_.rs`)
+- [x] Named types (`type_.rs`)
+- [x] Function types (`type_.rs`)
+- [x] Tuple types (`type_.rs`)
+- [x] Record types (`type_.rs`)
 
 ### Expressions
 - [x] term / number (`expression/number.rs`)
@@ -200,7 +201,15 @@ pattern_list   = '[' ']' | '[' pattern_expr { ',' pattern_expr } ']' ;
 ### Types
 
 ```ebnf
-(* To be filled in as implemented *)
+type_expr      = type_app [ '->' type_expr ] ;
+type_app       = upper_var { type_term } ;
+type_term      = type_var | type_named | type_tuple | type_record ;
+type_var       = lower_var ;
+type_named     = upper_var | qualified_upper ;
+type_tuple     = '(' ')' | '(' type_expr ')' | '(' type_expr ',' type_expr { ',' type_expr } ')' ;
+type_record    = '{' '}' | '{' lower_var ':' type_expr { ',' type_field } '}'
+               | '{' lower_var '|' type_field { ',' type_field } '}' ;
+type_field     = lower_var ':' type_expr ;
 ```
 
 ### Declarations

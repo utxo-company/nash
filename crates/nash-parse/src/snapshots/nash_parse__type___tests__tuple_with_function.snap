@@ -1,0 +1,78 @@
+---
+source: crates/nash-parse/src/type_.rs
+description: "Code:\n\n(a -> b, c)"
+---
+Located {
+    region: Region {
+        start: Position {
+            line: 1,
+            column: 1,
+        },
+        end: Position {
+            line: 1,
+            column: 12,
+        },
+    },
+    value: Tuple(
+        Located {
+            region: Region {
+                start: Position {
+                    line: 1,
+                    column: 2,
+                },
+                end: Position {
+                    line: 1,
+                    column: 8,
+                },
+            },
+            value: Lambda(
+                Located {
+                    region: Region {
+                        start: Position {
+                            line: 1,
+                            column: 2,
+                        },
+                        end: Position {
+                            line: 1,
+                            column: 3,
+                        },
+                    },
+                    value: Var(
+                        "a",
+                    ),
+                },
+                Located {
+                    region: Region {
+                        start: Position {
+                            line: 1,
+                            column: 7,
+                        },
+                        end: Position {
+                            line: 1,
+                            column: 8,
+                        },
+                    },
+                    value: Var(
+                        "b",
+                    ),
+                },
+            ),
+        },
+        Located {
+            region: Region {
+                start: Position {
+                    line: 1,
+                    column: 10,
+                },
+                end: Position {
+                    line: 1,
+                    column: 11,
+                },
+            },
+            value: Var(
+                "c",
+            ),
+        },
+        [],
+    ),
+}

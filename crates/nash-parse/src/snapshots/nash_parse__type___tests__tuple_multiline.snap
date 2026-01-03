@@ -1,0 +1,98 @@
+---
+source: crates/nash-parse/src/type_.rs
+description: "Code:\n\n(\n    Int,\n    String,\n    Bool\n)"
+---
+Located {
+    region: Region {
+        start: Position {
+            line: 1,
+            column: 1,
+        },
+        end: Position {
+            line: 5,
+            column: 2,
+        },
+    },
+    value: Tuple(
+        Located {
+            region: Region {
+                start: Position {
+                    line: 2,
+                    column: 5,
+                },
+                end: Position {
+                    line: 2,
+                    column: 8,
+                },
+            },
+            value: Type(
+                Region {
+                    start: Position {
+                        line: 2,
+                        column: 5,
+                    },
+                    end: Position {
+                        line: 2,
+                        column: 8,
+                    },
+                },
+                "Int",
+                [],
+            ),
+        },
+        Located {
+            region: Region {
+                start: Position {
+                    line: 3,
+                    column: 5,
+                },
+                end: Position {
+                    line: 3,
+                    column: 11,
+                },
+            },
+            value: Type(
+                Region {
+                    start: Position {
+                        line: 3,
+                        column: 5,
+                    },
+                    end: Position {
+                        line: 3,
+                        column: 11,
+                    },
+                },
+                "String",
+                [],
+            ),
+        },
+        [
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 4,
+                        column: 5,
+                    },
+                    end: Position {
+                        line: 4,
+                        column: 9,
+                    },
+                },
+                value: Type(
+                    Region {
+                        start: Position {
+                            line: 4,
+                            column: 5,
+                        },
+                        end: Position {
+                            line: 4,
+                            column: 9,
+                        },
+                    },
+                    "Bool",
+                    [],
+                ),
+            },
+        ],
+    ),
+}
