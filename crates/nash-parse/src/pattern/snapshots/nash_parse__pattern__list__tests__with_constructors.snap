@@ -1,0 +1,88 @@
+---
+source: crates/nash-parse/src/pattern/list.rs
+description: "Code:\n\n[Just x, Nothing]"
+---
+Located {
+    region: Region {
+        start: Position {
+            line: 1,
+            column: 1,
+        },
+        end: Position {
+            line: 1,
+            column: 18,
+        },
+    },
+    value: List(
+        [
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 2,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 8,
+                    },
+                },
+                value: Ctor(
+                    Region {
+                        start: Position {
+                            line: 1,
+                            column: 2,
+                        },
+                        end: Position {
+                            line: 1,
+                            column: 6,
+                        },
+                    },
+                    "Just",
+                    [
+                        Located {
+                            region: Region {
+                                start: Position {
+                                    line: 1,
+                                    column: 7,
+                                },
+                                end: Position {
+                                    line: 1,
+                                    column: 8,
+                                },
+                            },
+                            value: Var(
+                                "x",
+                            ),
+                        },
+                    ],
+                ),
+            },
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 10,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 17,
+                    },
+                },
+                value: Ctor(
+                    Region {
+                        start: Position {
+                            line: 1,
+                            column: 10,
+                        },
+                        end: Position {
+                            line: 1,
+                            column: 17,
+                        },
+                    },
+                    "Nothing",
+                    [],
+                ),
+            },
+        ],
+    ),
+}

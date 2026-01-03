@@ -70,13 +70,16 @@ impl<'a> Parser<'a> {
     ///
     /// Called after a chomp to verify indentation.
     /// Mirrors Elm's `Space.checkIndent`.
+    ///
+    /// Note: Uses `end_col` for the indent check (not current position),
+    /// matching Elm's behavior where the position is passed explicitly.
     pub fn check_indent<E>(
         &self,
         end_row: Row,
         end_col: Col,
         to_error: impl FnOnce(Row, Col) -> E,
     ) -> Result<(), E> {
-        if self.col > self.indent && self.col > 1 {
+        if end_col > self.indent {
             Ok(())
         } else {
             Err(to_error(end_row, end_col))

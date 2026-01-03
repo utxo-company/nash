@@ -1,0 +1,31 @@
+---
+source: crates/nash-parse/src/pattern/term.rs
+description: "Code:\n\nData.Maybe.Nothing"
+---
+Located {
+    region: Region {
+        start: Position {
+            line: 1,
+            column: 1,
+        },
+        end: Position {
+            line: 1,
+            column: 19,
+        },
+    },
+    value: CtorQual(
+        Region {
+            start: Position {
+                line: 1,
+                column: 1,
+            },
+            end: Position {
+                line: 1,
+                column: 19,
+            },
+        },
+        "Data.Maybe",
+        "Nothing",
+        [],
+    ),
+}

@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Patterns (Wildcard, Variable, Constructor, Tuple, List, Record)
+**Next task:** Types (Type variables, Named types, Function types, Tuple types, Record types)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -17,6 +17,11 @@ Current working files:
 - `crates/nash-parse/src/expression/list.rs` - `list` expression + tests
 - `crates/nash-parse/src/expression/tuple.rs` - `tuple`, unit, parens + tests
 - `crates/nash-parse/src/expression/record.rs` - `record`, record update + tests
+- `crates/nash-parse/src/pattern/mod.rs` - `pattern_term`, `pattern_expr` (cons, as, ctor args)
+- `crates/nash-parse/src/pattern/term.rs` - wildcard, var, ctor, number, string
+- `crates/nash-parse/src/pattern/record.rs` - `{ x, y, z }`
+- `crates/nash-parse/src/pattern/tuple.rs` - `()`, `(a, b)`
+- `crates/nash-parse/src/pattern/list.rs` - `[]`, `[a, b, c]`
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -75,13 +80,14 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Record update (`expression/record.rs`)
 
 ### Patterns
-- [ ] Wildcard `_`
-- [ ] Variable binding
-- [ ] Constructor patterns
-- [ ] Tuple patterns
-- [ ] List patterns
-- [ ] Record patterns
-- [ ] As-patterns
+- [x] Wildcard `_` (`pattern/term.rs`)
+- [x] Variable binding (`pattern/term.rs`)
+- [x] Constructor patterns (`pattern/term.rs`, `pattern/mod.rs`)
+- [x] Tuple patterns (`pattern/tuple.rs`)
+- [x] List patterns (`pattern/list.rs`)
+- [x] Record patterns (`pattern/record.rs`)
+- [x] As-patterns (`pattern/mod.rs`)
+- [x] Cons patterns (`pattern/mod.rs`)
 
 ### Types
 - [ ] Type variables
@@ -178,7 +184,17 @@ field          = lower_var '=' expr ;
 ### Patterns
 
 ```ebnf
-(* To be filled in as implemented *)
+pattern_expr   = pattern_part { '::' pattern_part } [ 'as' lower_var ] ;
+pattern_part   = ctor_pattern | pattern_term ;
+ctor_pattern   = ( upper_var | qualified_upper ) { pattern_term } ;
+pattern_term   = wildcard | lower_var | ctor_no_args | number | string
+               | pattern_record | pattern_tuple | pattern_list ;
+wildcard       = '_' ;
+ctor_no_args   = upper_var | qualified_upper ;
+pattern_record = '{' '}' | '{' lower_var { ',' lower_var } '}' ;
+pattern_tuple  = '(' ')' | '(' pattern_expr ')'
+               | '(' pattern_expr ',' pattern_expr { ',' pattern_expr } ')' ;
+pattern_list   = '[' ']' | '[' pattern_expr { ',' pattern_expr } ']' ;
 ```
 
 ### Types

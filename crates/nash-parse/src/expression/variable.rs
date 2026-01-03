@@ -179,13 +179,13 @@ impl<'a> Parser<'a> {
 
     /// Check if current position is a dot followed by uppercase.
     #[inline]
-    fn is_dot_upper(&self) -> bool {
+    pub(crate) fn is_dot_upper(&self) -> bool {
         self.peek() == Some(b'.') && matches!(self.peek_at(1), Some(b) if b.is_ascii_uppercase())
     }
 
     /// Check if current position is a dot followed by lowercase.
     #[inline]
-    fn is_dot_lower(&self) -> bool {
+    pub(crate) fn is_dot_lower(&self) -> bool {
         self.peek() == Some(b'.') && matches!(self.peek_at(1), Some(b) if b.is_ascii_lowercase())
     }
 

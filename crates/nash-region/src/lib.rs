@@ -2,8 +2,8 @@ use std::cmp::Ordering;
 
 #[derive(Clone, Debug, Eq, Copy, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Located<T> {
-    region: Region,
-    value: T,
+    pub region: Region,
+    pub value: T,
 }
 
 impl<T> Located<T> {
@@ -20,8 +20,8 @@ impl<T> Located<T> {
 
 #[derive(Clone, Debug, Eq, Copy, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Region {
-    start: Position,
-    end: Position,
+    pub start: Position,
+    pub end: Position,
 }
 
 impl Region {
@@ -65,8 +65,8 @@ impl Region {
 
 #[derive(Clone, Debug, Eq, Copy, PartialEq, Hash)]
 pub struct Position {
-    line: u16,
-    column: u16,
+    pub line: u16,
+    pub column: u16,
 }
 
 impl Position {

@@ -5,6 +5,7 @@ pub mod error;
 mod expression;
 mod keyword;
 mod number;
+mod pattern;
 mod space;
 mod string;
 
