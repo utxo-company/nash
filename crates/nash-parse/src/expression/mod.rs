@@ -8,6 +8,7 @@ use nash_source::Expr;
 use crate::Parser;
 use crate::error;
 
+mod accessor;
 mod list;
 mod number;
 mod record;
@@ -35,12 +36,22 @@ impl<'a> Parser<'a> {
         self.one_of(
             error::Expr::Start,
             vec![
-                Box::new(|p: &mut Parser<'a>| p.variable(start)),
+                Box::new(|p: &mut Parser<'a>| {
+                    let expr = p.variable(start)?;
+                    p.accessible(start, expr)
+                }),
                 Box::new(|p| p.string(start)),
                 Box::new(|p| p.number(start)),
                 Box::new(|p| p.list(start)),
-                Box::new(|p| p.tuple(start)),
-                Box::new(|p| p.record(start)),
+                Box::new(|p| {
+                    let expr = p.record(start)?;
+                    p.accessible(start, expr)
+                }),
+                Box::new(|p| {
+                    let expr = p.tuple(start)?;
+                    p.accessible(start, expr)
+                }),
+                Box::new(|p| p.accessor(start)),
             ],
         )
     }
