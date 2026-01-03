@@ -19,21 +19,6 @@ Located {
                 region: Region {
                     start: Position {
                         line: 1,
-                        column: 4,
-                    },
-                    end: Position {
-                        line: 1,
-                        column: 5,
-                    },
-                },
-                value: Var(
-                    "y",
-                ),
-            },
-            Located {
-                region: Region {
-                    start: Position {
-                        line: 1,
                         column: 2,
                     },
                     end: Position {
@@ -43,6 +28,21 @@ Located {
                 },
                 value: Var(
                     "x",
+                ),
+            },
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 4,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 5,
+                    },
+                },
+                value: Var(
+                    "y",
                 ),
             },
         ],

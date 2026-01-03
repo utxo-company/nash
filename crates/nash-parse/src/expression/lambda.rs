@@ -53,9 +53,9 @@ impl<'a> Parser<'a> {
                     |p| p.expression(),
                 )?;
 
-                // Reverse args and convert to bump slice
+                // Convert to bump slice (already in correct order)
                 let mut params: BumpVec<'a, &'a Located<_>> = BumpVec::new_in(p.bump);
-                for arg in rev_args.into_iter().rev() {
+                for arg in rev_args {
                     params.push(arg);
                 }
                 let params_slice = params.into_bump_slice();
