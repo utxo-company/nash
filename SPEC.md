@@ -173,7 +173,8 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-expression     = lambda | possibly_neg_term { term } ;
+expression     = if_expr | lambda | possibly_neg_term { term } ;
+if_expr        = 'if' expression 'then' expression 'else' expression ;
 lambda         = '\' pattern { pattern } '->' expression ;
 possibly_neg_term = '-' term | term ;
 term           = ( variable | record | tuple ) { '.' lower_var }
