@@ -8,6 +8,7 @@ mod number;
 mod pattern;
 mod space;
 mod string;
+mod symbol;
 mod type_;
 
 pub type Row = u16;

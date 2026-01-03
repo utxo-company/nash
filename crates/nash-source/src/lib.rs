@@ -101,6 +101,7 @@ pub enum Expr<'a> {
         arms: &'a [&'a CaseArm<'a>],
     },
     Accessor(&'a str),
+    Access(&'a Located<Expr<'a>>, &'a Located<&'a str>),
     Update(&'a Located<&'a str>, &'a [&'a FieldAssign<'a>]),
     Record(&'a [&'a FieldAssign<'a>]),
     Unit,
@@ -120,7 +121,7 @@ pub enum VarType {
 #[derive(Debug)]
 pub struct IfBranch<'a> {
     pub condition: &'a Located<Expr<'a>>,
-    pub body: &'a Located<Expr<'a>>,
+    pub then_branch: &'a Located<Expr<'a>>,
 }
 
 #[derive(Debug)]
