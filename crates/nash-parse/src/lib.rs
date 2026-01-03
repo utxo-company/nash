@@ -108,6 +108,30 @@ impl<'a> Parser<'a> {
         self.indent = indent;
     }
 
+    /// Run a parser with the current column as the indent level,
+    /// then restore the old indent level.
+    ///
+    /// Mirrors Elm's `withIndent`:
+    /// ```haskell
+    /// withIndent (Parser parser) =
+    ///   Parser $ \(State src pos end oldIndent row col) cok eok cerr eerr ->
+    ///     let
+    ///       cok' a (State s p e _ r c) = cok a (State s p e oldIndent r c)
+    ///       eok' a (State s p e _ r c) = eok a (State s p e oldIndent r c)
+    ///     in
+    ///     parser (State src pos end col row col) cok' eok' cerr eerr
+    /// ```
+    pub fn with_indent<T, E>(
+        &mut self,
+        parser: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let old_indent = self.indent;
+        self.indent = self.col;
+        let result = parser(self);
+        self.indent = old_indent;
+        result
+    }
+
     /// Check if we've reached the end of input.
     #[inline]
     pub fn is_eof(&self) -> bool {

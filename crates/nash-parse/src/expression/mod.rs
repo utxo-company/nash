@@ -9,6 +9,7 @@ use crate::error;
 use crate::Parser;
 
 mod accessor;
+mod case;
 mod if_;
 mod lambda;
 mod list;
@@ -45,6 +46,8 @@ impl<'a> Parser<'a> {
         self.one_of(
             error::Expr::Start,
             vec![
+                // Case: case expr of pattern -> branch ...
+                Box::new(|p: &mut Parser<'a>| p.case_(start)),
                 // If: if cond then expr else expr
                 Box::new(|p: &mut Parser<'a>| p.if_(start)),
                 // Lambda: \args -> body
@@ -85,7 +88,9 @@ impl<'a> Parser<'a> {
             vec![
                 // argument - function application
                 Box::new(|p: &mut Parser<'a>| {
-                    p.check_indent(end.line, end.column, error::Expr::Start)?;
+                    // Check if CURRENT position (after chomping whitespace) is past indent
+                    let (row, col) = p.position();
+                    p.check_indent(row, col, error::Expr::Start)?;
                     let arg = p.term()?;
                     let new_end = p.get_position();
                     p.chomp(error::Expr::Space)?;

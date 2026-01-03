@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Expressions (Case, Let, Binary operators)
+**Next task:** Expressions (Let, Binary operators)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -14,6 +14,7 @@ Current working files:
 - `crates/nash-parse/src/expression/accessor.rs` - `.field` accessor, `foo.bar` field access chains
 - `crates/nash-parse/src/expression/lambda.rs` - `\args -> body` lambda expressions
 - `crates/nash-parse/src/expression/if_.rs` - `if/then/else` expressions
+- `crates/nash-parse/src/expression/case.rs` - `case/of` expressions
 - `crates/nash-parse/src/expression/number.rs` - `number` expression + tests
 - `crates/nash-parse/src/expression/string.rs` - `string` expression + tests
 - `crates/nash-parse/src/expression/variable.rs` - `variable`, `lower_name`, `upper_name`, `foreign_alpha` + tests
@@ -110,7 +111,7 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Function application (`expression/mod.rs`)
 - [x] Lambda expressions (`expression/lambda.rs`)
 - [x] If expressions (`expression/if_.rs`)
-- [ ] Case expressions
+- [x] Case expressions (`expression/case.rs`)
 - [ ] Let expressions
 - [ ] Binary operators
 
@@ -173,7 +174,9 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-expression     = if_expr | lambda | possibly_neg_term { term } ;
+expression     = case_expr | if_expr | lambda | possibly_neg_term { term } ;
+case_expr      = 'case' expression 'of' case_branch { case_branch } ;
+case_branch    = pattern '->' expression ;
 if_expr        = 'if' expression 'then' expression 'else' expression ;
 lambda         = '\' pattern { pattern } '->' expression ;
 possibly_neg_term = '-' term | term ;
