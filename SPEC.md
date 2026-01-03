@@ -2,17 +2,18 @@
 
 ## Current State
 
-**Next task:** Expressions (If, Case, Let, Binary operators)
+**Next task:** Expressions (Case, Let, Binary operators)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
 - `crates/nash-parse/src/number.rs` - `number_literal` primitive
 - `crates/nash-parse/src/string.rs` - `string_literal` primitive
-- `crates/nash-parse/src/keyword.rs` - reserved words
+- `crates/nash-parse/src/keyword.rs` - reserved words, keyword parsers (`keyword_if`, `keyword_then`, etc.)
 - `crates/nash-parse/src/space.rs` - whitespace, comments, indentation
 - `crates/nash-parse/src/expression/mod.rs` - `expression`, `term`, `possibly_negative_term`, `chomp_expr_end`
 - `crates/nash-parse/src/expression/accessor.rs` - `.field` accessor, `foo.bar` field access chains
 - `crates/nash-parse/src/expression/lambda.rs` - `\args -> body` lambda expressions
+- `crates/nash-parse/src/expression/if_.rs` - `if/then/else` expressions
 - `crates/nash-parse/src/expression/number.rs` - `number` expression + tests
 - `crates/nash-parse/src/expression/string.rs` - `string` expression + tests
 - `crates/nash-parse/src/expression/variable.rs` - `variable`, `lower_name`, `upper_name`, `foreign_alpha` + tests
@@ -108,7 +109,7 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Negation `-expr` (`expression/mod.rs`)
 - [x] Function application (`expression/mod.rs`)
 - [x] Lambda expressions (`expression/lambda.rs`)
-- [ ] If expressions
+- [x] If expressions (`expression/if_.rs`)
 - [ ] Case expressions
 - [ ] Let expressions
 - [ ] Binary operators

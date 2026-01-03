@@ -116,12 +116,17 @@ impl<'a> Parser<'a> {
         match self.peek() {
             // Lowercase - simple variable, no qualification possible
             Some(b) if b.is_ascii_lowercase() => {
+                // Save state in case this is a reserved keyword
+                let saved = self.save_state();
+
                 self.advance();
                 self.chomp_inner_chars();
 
                 let name = self.slice_from(start_pos);
 
                 if keyword::is_reserved(name) {
+                    // Restore state so one_of sees no input consumed
+                    self.restore_state(saved);
                     return Err(to_error(row, col));
                 }
 

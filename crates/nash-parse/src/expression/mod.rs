@@ -9,6 +9,7 @@ use crate::error;
 use crate::Parser;
 
 mod accessor;
+mod if_;
 mod lambda;
 mod list;
 mod number;
@@ -44,6 +45,8 @@ impl<'a> Parser<'a> {
         self.one_of(
             error::Expr::Start,
             vec![
+                // If: if cond then expr else expr
+                Box::new(|p: &mut Parser<'a>| p.if_(start)),
                 // Lambda: \args -> body
                 Box::new(|p: &mut Parser<'a>| p.lambda(start)),
                 // Term (possibly negated) with function application
