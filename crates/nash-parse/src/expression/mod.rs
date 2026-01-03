@@ -2,7 +2,7 @@
 //!
 //! Ported from Elm's `Parse/Expression.hs`.
 
-use nash_region::{Located, Position};
+use nash_region::{Located, Position, Region};
 use nash_source::Expr;
 
 use crate::error;
@@ -33,15 +33,58 @@ impl<'a> Parser<'a> {
     ///         ]
     /// ```
     ///
-    /// Currently implements: possiblyNegativeTerm only.
-    /// TODO: let, if, case, function, application, operators
+    /// Currently implements: possiblyNegativeTerm + function application.
+    /// TODO: let, if, case, function, operators
     pub fn expression(
         &mut self,
     ) -> Result<(&'a Located<Expr<'a>>, Position), error::Expr<'a>> {
         let start = self.get_position();
         let expr = self.possibly_negative_term(start)?;
         let end = self.get_position();
-        Ok((expr, end))
+        self.chomp(error::Expr::Space)?;
+        self.chomp_expr_end(start, expr, vec![], end)
+    }
+
+    /// Handle function application (and later, binary operators).
+    ///
+    /// Mirrors Elm's `chompExprEnd`:
+    /// ```haskell
+    /// chompExprEnd start (State ops expr args end) =
+    ///   oneOfWithFallback
+    ///     [ -- argument
+    ///       do  Space.checkIndent end E.Start
+    ///           arg <- term
+    ///           ...
+    ///     , -- operator (TODO)
+    ///     ]
+    ///     -- done: finalize with toCall
+    /// ```
+    fn chomp_expr_end(
+        &mut self,
+        start: Position,
+        expr: &'a Located<Expr<'a>>,
+        args: Vec<&'a Located<Expr<'a>>>,
+        end: Position,
+    ) -> Result<(&'a Located<Expr<'a>>, Position), error::Expr<'a>> {
+        self.one_of_with_fallback(
+            vec![
+                // argument - function application
+                Box::new(|p: &mut Parser<'a>| {
+                    p.check_indent(end.line, end.column, error::Expr::Start)?;
+                    let arg = p.term()?;
+                    let new_end = p.get_position();
+                    p.chomp(error::Expr::Space)?;
+
+                    let mut new_args = args.clone();
+                    new_args.push(arg);
+
+                    p.chomp_expr_end(start, expr, new_args, new_end)
+                }),
+                // TODO: operator handling
+            ],
+            // done: finalize expression
+            (to_call(self, start, expr, args.clone()), end),
+        )
     }
 
     /// Parse possibly negated term: `-term` or `term`.
@@ -110,6 +153,37 @@ impl<'a> Parser<'a> {
                 Box::new(|p| p.accessor(start)),
             ],
         )
+    }
+}
+
+/// Convert function + args into a Call expression.
+///
+/// Mirrors Elm's `toCall`:
+/// ```haskell
+/// toCall func revArgs =
+///   case revArgs of
+///     [] -> func
+///     lastArg : _ -> A.merge func lastArg (Src.Call func (reverse revArgs))
+/// ```
+fn to_call<'a>(
+    parser: &Parser<'a>,
+    _start: Position,
+    func: &'a Located<Expr<'a>>,
+    args: Vec<&'a Located<Expr<'a>>>,
+) -> &'a Located<Expr<'a>> {
+    if args.is_empty() {
+        func
+    } else {
+        let last_arg = args.last().unwrap();
+        let region = Region::span_across(&func.region, &last_arg.region);
+        let args_slice = parser.alloc_slice_copy(&args);
+        parser.alloc(Located::at(
+            region,
+            Expr::Call {
+                function: func,
+                arguments: args_slice,
+            },
+        ))
     }
 }
 
@@ -201,5 +275,25 @@ mod tests {
     #[test]
     fn expr_simple_number() {
         assert_expression_snapshot!("123");
+    }
+
+    #[test]
+    fn application_single() {
+        assert_expression_snapshot!("f x");
+    }
+
+    #[test]
+    fn application_multiple() {
+        assert_expression_snapshot!("f x y z");
+    }
+
+    #[test]
+    fn application_nested() {
+        assert_expression_snapshot!("f (g x)");
+    }
+
+    #[test]
+    fn application_with_record() {
+        assert_expression_snapshot!("f { x = 1 }");
     }
 }

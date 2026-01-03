@@ -74,7 +74,10 @@ impl<'a> Parser<'a> {
     fn tuple_expr(&mut self) -> Result<&'a Located<Expr<'a>>, Tuple<'a>> {
         self.specialize(
             |bump, expr_err, row, col| Tuple::Expr(bump.alloc(expr_err), row, col),
-            |p| p.term(),
+            |p| {
+                let (expr, _end) = p.expression()?;
+                Ok(expr)
+            },
         )
     }
 

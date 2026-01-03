@@ -82,7 +82,10 @@ impl<'a> Parser<'a> {
     fn list_expr(&mut self) -> Result<&'a Located<Expr<'a>>, List<'a>> {
         self.specialize(
             |bump, expr_err, row, col| List::Expr(bump.alloc(expr_err), row, col),
-            |p| p.term(),
+            |p| {
+                let (expr, _end) = p.expression()?;
+                Ok(expr)
+            },
         )
     }
 
