@@ -68,6 +68,22 @@ cargo insta accept  # to accept new snapshots
 cargo insta test --unreferenced delete  # delete stale snapshots
 ```
 
+### Test String Formatting
+
+The test macros use `indoc!` which strips leading indentation, so:
+- **Simple one-liners** stay simple: `assert_expression_snapshot!("if x then y else z");`
+- **Multiline tests** use raw strings with normal indentation:
+  ```rust
+  assert_expression_snapshot!(r#"
+      if condition then
+          trueBranch
+      else
+          falseBranch
+  "#);
+  ```
+- No need to slam strings to the left - `indoc` handles it
+- Only use multiline raw strings when testing actual multiline syntax
+
 ## Progress Tracking
 
 **SPEC.md** at the repo root tracks:
