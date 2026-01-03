@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Expressions (Function application, Lambda, Let, If, Case, Binary operators)
+**Next task:** Expressions (If, Case, Let, Binary operators)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -10,7 +10,9 @@ Current working files:
 - `crates/nash-parse/src/string.rs` - `string_literal` primitive
 - `crates/nash-parse/src/keyword.rs` - reserved words
 - `crates/nash-parse/src/space.rs` - whitespace, comments, indentation
-- `crates/nash-parse/src/expression/mod.rs` - `term` (uses `one_of`)
+- `crates/nash-parse/src/expression/mod.rs` - `expression`, `term`, `possibly_negative_term`, `chomp_expr_end`
+- `crates/nash-parse/src/expression/accessor.rs` - `.field` accessor, `foo.bar` field access chains
+- `crates/nash-parse/src/expression/lambda.rs` - `\args -> body` lambda expressions
 - `crates/nash-parse/src/expression/number.rs` - `number` expression + tests
 - `crates/nash-parse/src/expression/string.rs` - `string` expression + tests
 - `crates/nash-parse/src/expression/variable.rs` - `variable`, `lower_name`, `upper_name`, `foreign_alpha` + tests
@@ -101,11 +103,14 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] term / number (`expression/number.rs`)
 - [x] term / string (`expression/string.rs`)
 - [x] term / variable (`expression/variable.rs`)
-- [ ] Function application
-- [ ] Lambda expressions
-- [ ] Let expressions
+- [x] Accessor `.field` (`expression/accessor.rs`)
+- [x] Field access `foo.bar.baz` (`expression/accessor.rs`)
+- [x] Negation `-expr` (`expression/mod.rs`)
+- [x] Function application (`expression/mod.rs`)
+- [x] Lambda expressions (`expression/lambda.rs`)
 - [ ] If expressions
 - [ ] Case expressions
+- [ ] Let expressions
 - [ ] Binary operators
 
 ### Declarations
@@ -167,7 +172,12 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-term           = variable | string | number | list | tuple | record ;
+expression     = lambda | possibly_neg_term { term } ;
+lambda         = '\' pattern { pattern } '->' expression ;
+possibly_neg_term = '-' term | term ;
+term           = ( variable | record | tuple ) { '.' lower_var }
+               | string | number | list | accessor ;
+accessor       = '.' lower_var ;
 variable       = lower_var | upper_var | qualified_var ;
 lower_var      = lower { inner_char } ;
 upper_var      = upper { inner_char } ;
