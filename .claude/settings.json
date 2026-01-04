@@ -8,7 +8,9 @@
       "Bash(cargo check:*)",
       "Bash(cargo test:*)",
       "Bash(cargo insta:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
