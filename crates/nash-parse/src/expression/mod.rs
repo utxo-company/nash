@@ -12,6 +12,7 @@ mod accessor;
 mod case;
 mod if_;
 mod lambda;
+mod let_;
 mod list;
 mod number;
 mod record;
@@ -46,6 +47,8 @@ impl<'a> Parser<'a> {
         self.one_of(
             error::Expr::Start,
             vec![
+                // Let: let defs in expr
+                Box::new(|p: &mut Parser<'a>| p.let_(start)),
                 // Case: case expr of pattern -> branch ...
                 Box::new(|p: &mut Parser<'a>| p.case_(start)),
                 // If: if cond then expr else expr

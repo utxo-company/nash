@@ -1,0 +1,141 @@
+---
+source: crates/nash-parse/src/expression/let_.rs
+description: "Code:\n\nlet\n    x =\n        let\n            y = 1\n        in\n            y\nin\n    x\n"
+---
+Located {
+    region: Region {
+        start: Position {
+            line: 1,
+            column: 1,
+        },
+        end: Position {
+            line: 9,
+            column: 1,
+        },
+    },
+    value: Let(
+        [
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 2,
+                        column: 5,
+                    },
+                    end: Position {
+                        line: 7,
+                        column: 1,
+                    },
+                },
+                value: Define(
+                    Located {
+                        region: Region {
+                            start: Position {
+                                line: 2,
+                                column: 5,
+                            },
+                            end: Position {
+                                line: 2,
+                                column: 6,
+                            },
+                        },
+                        value: "x",
+                    },
+                    [],
+                    Located {
+                        region: Region {
+                            start: Position {
+                                line: 3,
+                                column: 9,
+                            },
+                            end: Position {
+                                line: 7,
+                                column: 1,
+                            },
+                        },
+                        value: Let(
+                            [
+                                Located {
+                                    region: Region {
+                                        start: Position {
+                                            line: 4,
+                                            column: 13,
+                                        },
+                                        end: Position {
+                                            line: 5,
+                                            column: 9,
+                                        },
+                                    },
+                                    value: Define(
+                                        Located {
+                                            region: Region {
+                                                start: Position {
+                                                    line: 4,
+                                                    column: 13,
+                                                },
+                                                end: Position {
+                                                    line: 4,
+                                                    column: 14,
+                                                },
+                                            },
+                                            value: "y",
+                                        },
+                                        [],
+                                        Located {
+                                            region: Region {
+                                                start: Position {
+                                                    line: 4,
+                                                    column: 17,
+                                                },
+                                                end: Position {
+                                                    line: 4,
+                                                    column: 18,
+                                                },
+                                            },
+                                            value: Int(
+                                                1,
+                                            ),
+                                        },
+                                        None,
+                                    ),
+                                },
+                            ],
+                            Located {
+                                region: Region {
+                                    start: Position {
+                                        line: 6,
+                                        column: 13,
+                                    },
+                                    end: Position {
+                                        line: 6,
+                                        column: 14,
+                                    },
+                                },
+                                value: Var {
+                                    kind: LowVar,
+                                    name: "y",
+                                },
+                            },
+                        ),
+                    },
+                    None,
+                ),
+            },
+        ],
+        Located {
+            region: Region {
+                start: Position {
+                    line: 8,
+                    column: 5,
+                },
+                end: Position {
+                    line: 8,
+                    column: 6,
+                },
+            },
+            value: Var {
+                kind: LowVar,
+                name: "x",
+            },
+        },
+    ),
+}

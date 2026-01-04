@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Expressions (Let, Binary operators)
+**Next task:** Expressions (Binary operators)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -15,6 +15,7 @@ Current working files:
 - `crates/nash-parse/src/expression/lambda.rs` - `\args -> body` lambda expressions
 - `crates/nash-parse/src/expression/if_.rs` - `if/then/else` expressions
 - `crates/nash-parse/src/expression/case.rs` - `case/of` expressions
+- `crates/nash-parse/src/expression/let_.rs` - `let/in` expressions
 - `crates/nash-parse/src/expression/number.rs` - `number` expression + tests
 - `crates/nash-parse/src/expression/string.rs` - `string` expression + tests
 - `crates/nash-parse/src/expression/variable.rs` - `variable`, `lower_name`, `upper_name`, `foreign_alpha` + tests
@@ -112,7 +113,7 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Lambda expressions (`expression/lambda.rs`)
 - [x] If expressions (`expression/if_.rs`)
 - [x] Case expressions (`expression/case.rs`)
-- [ ] Let expressions
+- [x] Let expressions (`expression/let_.rs`)
 - [ ] Binary operators
 
 ### Declarations
@@ -174,7 +175,11 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-expression     = case_expr | if_expr | lambda | possibly_neg_term { term } ;
+expression     = let_expr | case_expr | if_expr | lambda | possibly_neg_term { term } ;
+let_expr       = 'let' let_def { let_def } 'in' expression ;
+let_def        = definition | destructure ;
+definition     = lower_var [ ':' type_expr ] { pattern } '=' expression ;
+destructure    = pattern '=' expression ;
 case_expr      = 'case' expression 'of' case_branch { case_branch } ;
 case_branch    = pattern '->' expression ;
 if_expr        = 'if' expression 'then' expression 'else' expression ;

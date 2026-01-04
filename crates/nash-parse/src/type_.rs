@@ -113,7 +113,9 @@ impl<'a> Parser<'a> {
         loop {
             let result = self.one_of_with_fallback(
                 vec![Box::new(|p: &mut Parser<'a>| {
-                    p.check_indent(end.line, end.column, error::Type::IndentStart)?;
+                    // Check CURRENT position (after chomp), not the end of previous token
+                    let (row, col) = p.position();
+                    p.check_indent(row, col, error::Type::IndentStart)?;
                     let arg = p.type_term()?;
                     let new_end = p.get_position();
                     p.chomp(error::Type::Space)?;

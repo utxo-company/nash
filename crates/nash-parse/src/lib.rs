@@ -132,6 +132,27 @@ impl<'a> Parser<'a> {
         result
     }
 
+    /// Run a parser with indent set to (current column - backset),
+    /// then restore the old indent level.
+    ///
+    /// Mirrors Elm's `withBacksetIndent`:
+    /// ```haskell
+    /// withBacksetIndent backset (Parser parser) =
+    ///   Parser $ \(State src pos end oldIndent row col) cok eok cerr eerr ->
+    ///     parser (State src pos end (col - backset) row col) ...
+    /// ```
+    pub fn with_backset_indent<T, E>(
+        &mut self,
+        backset: u16,
+        parser: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let old_indent = self.indent;
+        self.indent = self.col.saturating_sub(backset);
+        let result = parser(self);
+        self.indent = old_indent;
+        result
+    }
+
     /// Check if we've reached the end of input.
     #[inline]
     pub fn is_eof(&self) -> bool {
