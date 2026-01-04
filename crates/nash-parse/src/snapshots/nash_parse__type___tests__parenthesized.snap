@@ -13,8 +13,8 @@ Located {
             column: 5,
         },
     },
-    value: Type(
-        Region {
+    value: Type {
+        region: Region {
             start: Position {
                 line: 1,
                 column: 2,
@@ -24,7 +24,7 @@ Located {
                 column: 5,
             },
         },
-        "Int",
-        [],
-    ),
+        name: "Int",
+        args: [],
+    },
 }

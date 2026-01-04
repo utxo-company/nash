@@ -105,7 +105,11 @@ impl<'a> Parser<'a> {
             // Tuple
             let second = rest.remove(0);
             let others = rest.into_bump_slice();
-            Ok(self.add_end(start, Pattern::Tuple(first, second, others)))
+            Ok(self.add_end(start, Pattern::Tuple {
+                first,
+                second,
+                rest: others,
+            }))
         }
     }
 }

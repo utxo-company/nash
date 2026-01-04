@@ -13,8 +13,8 @@ Located {
             column: 8,
         },
     },
-    value: Ctor(
-        Region {
+    value: Ctor {
+        region: Region {
             start: Position {
                 line: 1,
                 column: 1,
@@ -24,7 +24,7 @@ Located {
                 column: 8,
             },
         },
-        "Nothing",
-        [],
-    ),
+        name: "Nothing",
+        args: [],
+    },
 }

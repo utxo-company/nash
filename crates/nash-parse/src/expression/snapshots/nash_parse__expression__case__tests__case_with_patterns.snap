@@ -124,8 +124,8 @@ Located {
                             column: 12,
                         },
                     },
-                    value: Cons(
-                        Located {
+                    value: Cons {
+                        head: Located {
                             region: Region {
                                 start: Position {
                                     line: 4,
@@ -140,7 +140,7 @@ Located {
                                 "x",
                             ),
                         },
-                        Located {
+                        tail: Located {
                             region: Region {
                                 start: Position {
                                     line: 4,
@@ -155,7 +155,7 @@ Located {
                                 "xs",
                             ),
                         },
-                    ),
+                    },
                 },
                 body: Located {
                     region: Region {

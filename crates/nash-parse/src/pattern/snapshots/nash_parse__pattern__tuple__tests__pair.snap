@@ -13,8 +13,8 @@ Located {
             column: 7,
         },
     },
-    value: Tuple(
-        Located {
+    value: Tuple {
+        first: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -29,7 +29,7 @@ Located {
                 "a",
             ),
         },
-        Located {
+        second: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -44,6 +44,6 @@ Located {
                 "b",
             ),
         },
-        [],
-    ),
+        rest: [],
+    },
 }

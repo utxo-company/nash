@@ -13,8 +13,8 @@ Located {
             column: 12,
         },
     },
-    value: Lambda(
-        Located {
+    value: Lambda {
+        from: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -29,7 +29,7 @@ Located {
                 "a",
             ),
         },
-        Located {
+        to: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -40,8 +40,8 @@ Located {
                     column: 12,
                 },
             },
-            value: Lambda(
-                Located {
+            value: Lambda {
+                from: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -56,7 +56,7 @@ Located {
                         "b",
                     ),
                 },
-                Located {
+                to: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -71,7 +71,7 @@ Located {
                         "c",
                     ),
                 },
-            ),
+            },
         },
-    ),
+    },
 }

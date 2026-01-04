@@ -62,7 +62,7 @@ impl<'a> Parser<'a> {
 
                 // Build the let expression
                 let defs_slice = p.alloc_slice_copy(&defs);
-                let let_expr = Expr::Let(defs_slice, body);
+                let let_expr = Expr::Let { defs: defs_slice, body };
 
                 Ok((p.add_end(start, let_expr), end))
             },
@@ -204,7 +204,12 @@ impl<'a> Parser<'a> {
                         )?;
 
                         let args_slice = args_for_body.into_bump_slice();
-                        let def = Def::Define(name, args_slice, body, type_ann);
+                        let def = Def::Define {
+                            name,
+                            args: args_slice,
+                            body,
+                            annotation: type_ann,
+                        };
                         Ok(DefinitionState::Done(p.add_end(start, def), end))
                     }),
                 ],
@@ -253,7 +258,7 @@ impl<'a> Parser<'a> {
                     |p| p.expression(),
                 )?;
 
-                let def = Def::Destruct(pattern, expr);
+                let def = Def::Destruct { pattern, body: expr };
                 Ok((p.add_end(start, def), end))
             },
         )

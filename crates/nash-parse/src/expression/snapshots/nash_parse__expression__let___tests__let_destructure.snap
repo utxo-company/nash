@@ -13,8 +13,8 @@ Located {
             column: 1,
         },
     },
-    value: Let(
-        [
+    value: Let {
+        defs: [
             Located {
                 region: Region {
                     start: Position {
@@ -26,8 +26,8 @@ Located {
                         column: 1,
                     },
                 },
-                value: Destruct(
-                    Located {
+                value: Destruct {
+                    pattern: Located {
                         region: Region {
                             start: Position {
                                 line: 2,
@@ -38,8 +38,8 @@ Located {
                                 column: 11,
                             },
                         },
-                        value: Tuple(
-                            Located {
+                        value: Tuple {
+                            first: Located {
                                 region: Region {
                                     start: Position {
                                         line: 2,
@@ -54,7 +54,7 @@ Located {
                                     "a",
                                 ),
                             },
-                            Located {
+                            second: Located {
                                 region: Region {
                                     start: Position {
                                         line: 2,
@@ -69,10 +69,10 @@ Located {
                                     "b",
                                 ),
                             },
-                            [],
-                        ),
+                            rest: [],
+                        },
                     },
-                    Located {
+                    body: Located {
                         region: Region {
                             start: Position {
                                 line: 2,
@@ -88,10 +88,10 @@ Located {
                             name: "pair",
                         },
                     },
-                ),
+                },
             },
         ],
-        Located {
+        body: Located {
             region: Region {
                 start: Position {
                     line: 4,
@@ -107,5 +107,5 @@ Located {
                 name: "a",
             },
         },
-    ),
+    },
 }

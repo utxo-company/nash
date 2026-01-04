@@ -13,8 +13,8 @@ Located {
             column: 2,
         },
     },
-    value: Record(
-        [
+    value: Record {
+        fields: [
             FieldType {
                 field: Located {
                     region: Region {
@@ -40,8 +40,8 @@ Located {
                             column: 18,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 2,
                                 column: 12,
@@ -51,9 +51,9 @@ Located {
                                 column: 18,
                             },
                         },
-                        "String",
-                        [],
-                    ),
+                        name: "String",
+                        args: [],
+                    },
                 },
             },
             FieldType {
@@ -81,8 +81,8 @@ Located {
                             column: 14,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 3,
                                 column: 11,
@@ -92,9 +92,9 @@ Located {
                                 column: 14,
                             },
                         },
-                        "Int",
-                        [],
-                    ),
+                        name: "Int",
+                        args: [],
+                    },
                 },
             },
             FieldType {
@@ -122,8 +122,8 @@ Located {
                             column: 18,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 4,
                                 column: 14,
@@ -133,12 +133,12 @@ Located {
                                 column: 18,
                             },
                         },
-                        "Bool",
-                        [],
-                    ),
+                        name: "Bool",
+                        args: [],
+                    },
                 },
             },
         ],
-        None,
-    ),
+        ext: None,
+    },
 }

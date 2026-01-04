@@ -13,8 +13,8 @@ Located {
             column: 1,
         },
     },
-    value: Let(
-        [
+    value: Let {
+        defs: [
             Located {
                 region: Region {
                     start: Position {
@@ -26,8 +26,8 @@ Located {
                         column: 1,
                     },
                 },
-                value: Define(
-                    Located {
+                value: Define {
+                    name: Located {
                         region: Region {
                             start: Position {
                                 line: 3,
@@ -40,7 +40,7 @@ Located {
                         },
                         value: "f",
                     },
-                    [
+                    args: [
                         Located {
                             region: Region {
                                 start: Position {
@@ -57,7 +57,7 @@ Located {
                             ),
                         },
                     ],
-                    Located {
+                    body: Located {
                         region: Region {
                             start: Position {
                                 line: 3,
@@ -73,7 +73,7 @@ Located {
                             name: "x",
                         },
                     },
-                    Some(
+                    annotation: Some(
                         Located {
                             region: Region {
                                 start: Position {
@@ -85,8 +85,8 @@ Located {
                                     column: 19,
                                 },
                             },
-                            value: Lambda(
-                                Located {
+                            value: Lambda {
+                                from: Located {
                                     region: Region {
                                         start: Position {
                                             line: 2,
@@ -97,8 +97,8 @@ Located {
                                             column: 12,
                                         },
                                     },
-                                    value: Type(
-                                        Region {
+                                    value: Type {
+                                        region: Region {
                                             start: Position {
                                                 line: 2,
                                                 column: 9,
@@ -108,11 +108,11 @@ Located {
                                                 column: 12,
                                             },
                                         },
-                                        "Int",
-                                        [],
-                                    ),
+                                        name: "Int",
+                                        args: [],
+                                    },
                                 },
-                                Located {
+                                to: Located {
                                     region: Region {
                                         start: Position {
                                             line: 2,
@@ -123,8 +123,8 @@ Located {
                                             column: 19,
                                         },
                                     },
-                                    value: Type(
-                                        Region {
+                                    value: Type {
+                                        region: Region {
                                             start: Position {
                                                 line: 2,
                                                 column: 16,
@@ -134,17 +134,17 @@ Located {
                                                 column: 19,
                                             },
                                         },
-                                        "Int",
-                                        [],
-                                    ),
+                                        name: "Int",
+                                        args: [],
+                                    },
                                 },
-                            ),
+                            },
                         },
                     ),
-                ),
+                },
             },
         ],
-        Located {
+        body: Located {
             region: Region {
                 start: Position {
                     line: 5,
@@ -191,5 +191,5 @@ Located {
                 ],
             },
         },
-    ),
+    },
 }

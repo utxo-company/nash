@@ -13,8 +13,8 @@ Located {
             column: 12,
         },
     },
-    value: Access(
-        Located {
+    value: Access {
+        record: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -60,7 +60,7 @@ Located {
                 ],
             ),
         },
-        Located {
+        field: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -73,5 +73,5 @@ Located {
             },
             value: "x",
         },
-    ),
+    },
 }

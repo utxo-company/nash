@@ -13,8 +13,8 @@ Located {
             column: 29,
         },
     },
-    value: Record(
-        [
+    value: Record {
+        fields: [
             FieldType {
                 field: Located {
                     region: Region {
@@ -40,8 +40,8 @@ Located {
                             column: 16,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 1,
                                 column: 10,
@@ -51,9 +51,9 @@ Located {
                                 column: 16,
                             },
                         },
-                        "String",
-                        [],
-                    ),
+                        name: "String",
+                        args: [],
+                    },
                 },
             },
             FieldType {
@@ -81,8 +81,8 @@ Located {
                             column: 27,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 1,
                                 column: 24,
@@ -92,12 +92,12 @@ Located {
                                 column: 27,
                             },
                         },
-                        "Int",
-                        [],
-                    ),
+                        name: "Int",
+                        args: [],
+                    },
                 },
             },
         ],
-        None,
-    ),
+        ext: None,
+    },
 }

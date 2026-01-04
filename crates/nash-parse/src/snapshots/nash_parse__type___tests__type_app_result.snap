@@ -13,8 +13,8 @@ Located {
             column: 18,
         },
     },
-    value: Type(
-        Region {
+    value: Type {
+        region: Region {
             start: Position {
                 line: 1,
                 column: 1,
@@ -24,8 +24,8 @@ Located {
                 column: 7,
             },
         },
-        "Result",
-        [
+        name: "Result",
+        args: [
             Located {
                 region: Region {
                     start: Position {
@@ -37,8 +37,8 @@ Located {
                         column: 14,
                     },
                 },
-                value: Type(
-                    Region {
+                value: Type {
+                    region: Region {
                         start: Position {
                             line: 1,
                             column: 8,
@@ -48,9 +48,9 @@ Located {
                             column: 14,
                         },
                     },
-                    "String",
-                    [],
-                ),
+                    name: "String",
+                    args: [],
+                },
             },
             Located {
                 region: Region {
@@ -63,8 +63,8 @@ Located {
                         column: 18,
                     },
                 },
-                value: Type(
-                    Region {
+                value: Type {
+                    region: Region {
                         start: Position {
                             line: 1,
                             column: 15,
@@ -74,10 +74,10 @@ Located {
                             column: 18,
                         },
                     },
-                    "Int",
-                    [],
-                ),
+                    name: "Int",
+                    args: [],
+                },
             },
         ],
-    ),
+    },
 }

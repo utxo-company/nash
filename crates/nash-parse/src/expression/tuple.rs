@@ -150,7 +150,11 @@ impl<'a> Parser<'a> {
             // Tuple: need at least 2 elements
             let second = rest.remove(0);
             let others = rest.into_bump_slice();
-            Ok(self.add_end(start, Expr::Tuple(first, second, others)))
+            Ok(self.add_end(start, Expr::Tuple {
+                first,
+                second,
+                rest: others,
+            }))
         }
     }
 }

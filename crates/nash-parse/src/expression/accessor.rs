@@ -57,7 +57,10 @@ impl<'a> Parser<'a> {
                 let located_field = p.alloc(Located::at(Region::new(pos, end), field));
                 let access_expr = p.alloc(Located::at(
                     Region::new(start, end),
-                    Expr::Access(expr, located_field),
+                    Expr::Access {
+                        record: expr,
+                        field: located_field,
+                    },
                 ));
 
                 p.accessible(start, access_expr)

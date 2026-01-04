@@ -13,8 +13,8 @@ Located {
             column: 10,
         },
     },
-    value: TypeQual(
-        Region {
+    value: TypeQual {
+        region: Region {
             start: Position {
                 line: 1,
                 column: 1,
@@ -24,8 +24,8 @@ Located {
                 column: 10,
             },
         },
-        "Dict",
-        "Dict",
-        [],
-    ),
+        module: "Dict",
+        name: "Dict",
+        args: [],
+    },
 }

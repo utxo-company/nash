@@ -13,8 +13,8 @@ Located {
             column: 23,
         },
     },
-    value: Alias(
-        Located {
+    value: Alias {
+        pattern: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -25,8 +25,8 @@ Located {
                     column: 15,
                 },
             },
-            value: Cons(
-                Located {
+            value: Cons {
+                head: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -37,8 +37,8 @@ Located {
                             column: 8,
                         },
                     },
-                    value: Ctor(
-                        Region {
+                    value: Ctor {
+                        region: Region {
                             start: Position {
                                 line: 1,
                                 column: 1,
@@ -48,8 +48,8 @@ Located {
                                 column: 5,
                             },
                         },
-                        "Just",
-                        [
+                        name: "Just",
+                        args: [
                             Located {
                                 region: Region {
                                     start: Position {
@@ -66,9 +66,9 @@ Located {
                                 ),
                             },
                         ],
-                    ),
+                    },
                 },
-                Located {
+                tail: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -83,9 +83,9 @@ Located {
                         "rest",
                     ),
                 },
-            ),
+            },
         },
-        Located {
+        name: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -98,5 +98,5 @@ Located {
             },
             value: "list",
         },
-    ),
+    },
 }

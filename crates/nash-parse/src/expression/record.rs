@@ -120,7 +120,10 @@ impl<'a> Parser<'a> {
         self.chomp_fields(&mut fields)?;
 
         let slice = fields.into_bump_slice();
-        Ok(self.add_end(start, Expr::Update(target, slice)))
+        Ok(self.add_end(start, Expr::Update {
+            record: target,
+            fields: slice,
+        }))
     }
 
     /// Parse a record literal starting after the first '='.

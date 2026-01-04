@@ -13,8 +13,8 @@ Located {
             column: 50,
         },
     },
-    value: Record(
-        [
+    value: Record {
+        fields: [
             FieldType {
                 field: Located {
                     region: Region {
@@ -40,8 +40,8 @@ Located {
                             column: 16,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 1,
                                 column: 11,
@@ -51,9 +51,9 @@ Located {
                                 column: 16,
                             },
                         },
-                        "Model",
-                        [],
-                    ),
+                        name: "Model",
+                        args: [],
+                    },
                 },
             },
             FieldType {
@@ -81,8 +81,8 @@ Located {
                             column: 48,
                         },
                     },
-                    value: Lambda(
-                        Located {
+                    value: Lambda {
+                        from: Located {
                             region: Region {
                                 start: Position {
                                     line: 1,
@@ -93,8 +93,8 @@ Located {
                                     column: 30,
                                 },
                             },
-                            value: Type(
-                                Region {
+                            value: Type {
+                                region: Region {
                                     start: Position {
                                         line: 1,
                                         column: 27,
@@ -104,11 +104,11 @@ Located {
                                         column: 30,
                                     },
                                 },
-                                "Msg",
-                                [],
-                            ),
+                                name: "Msg",
+                                args: [],
+                            },
                         },
-                        Located {
+                        to: Located {
                             region: Region {
                                 start: Position {
                                     line: 1,
@@ -119,8 +119,8 @@ Located {
                                     column: 48,
                                 },
                             },
-                            value: Lambda(
-                                Located {
+                            value: Lambda {
+                                from: Located {
                                     region: Region {
                                         start: Position {
                                             line: 1,
@@ -131,8 +131,8 @@ Located {
                                             column: 39,
                                         },
                                     },
-                                    value: Type(
-                                        Region {
+                                    value: Type {
+                                        region: Region {
                                             start: Position {
                                                 line: 1,
                                                 column: 34,
@@ -142,11 +142,11 @@ Located {
                                                 column: 39,
                                             },
                                         },
-                                        "Model",
-                                        [],
-                                    ),
+                                        name: "Model",
+                                        args: [],
+                                    },
                                 },
-                                Located {
+                                to: Located {
                                     region: Region {
                                         start: Position {
                                             line: 1,
@@ -157,8 +157,8 @@ Located {
                                             column: 48,
                                         },
                                     },
-                                    value: Type(
-                                        Region {
+                                    value: Type {
+                                        region: Region {
                                             start: Position {
                                                 line: 1,
                                                 column: 43,
@@ -168,16 +168,16 @@ Located {
                                                 column: 48,
                                             },
                                         },
-                                        "Model",
-                                        [],
-                                    ),
+                                        name: "Model",
+                                        args: [],
+                                    },
                                 },
-                            ),
+                            },
                         },
-                    ),
+                    },
                 },
             },
         ],
-        None,
-    ),
+        ext: None,
+    },
 }

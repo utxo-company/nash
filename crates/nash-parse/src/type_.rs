@@ -67,7 +67,10 @@ impl<'a> Parser<'a> {
                 let (tipe2, end2) = p.type_expr()?;
                 let tipe = p.alloc(Located::at(
                     Region::new(start, end2),
-                    Type::Lambda(tipe1, tipe2),
+                    Type::Lambda {
+                        from: tipe1,
+                        to: tipe2,
+                    },
                 ));
                 Ok((tipe, end2))
             })],
@@ -94,8 +97,17 @@ impl<'a> Parser<'a> {
 
         let region = Region::new(start, upper_end);
         let tipe = match upper {
-            ForeignUpper::Unqualified(name) => Type::Type(region, name, args),
-            ForeignUpper::Qualified(module, name) => Type::TypeQual(region, module, name, args),
+            ForeignUpper::Unqualified(name) => Type::Type {
+                region,
+                name,
+                args,
+            },
+            ForeignUpper::Qualified(module, name) => Type::TypeQual {
+                region,
+                module,
+                name,
+                args,
+            },
         };
 
         Ok((self.alloc(Located::at(Region::new(start, end), tipe)), end))
@@ -162,11 +174,20 @@ impl<'a> Parser<'a> {
                     let tipe = match upper {
                         ForeignUpper::Unqualified(name) => {
                             let empty: &'a [&'a Located<Type<'a>>] = &[];
-                            Type::Type(region, name, empty)
+                            Type::Type {
+                                region,
+                                name,
+                                args: empty,
+                            }
                         }
                         ForeignUpper::Qualified(module, name) => {
                             let empty: &'a [&'a Located<Type<'a>>] = &[];
-                            Type::TypeQual(region, module, name, empty)
+                            Type::TypeQual {
+                                region,
+                                module,
+                                name,
+                                args: empty,
+                            }
                         }
                     };
 
@@ -281,7 +302,11 @@ impl<'a> Parser<'a> {
             // Tuple
             let second = rest.remove(0);
             let others = rest.into_bump_slice();
-            Ok(self.add_end(start, Type::Tuple(first, second, others)))
+            Ok(self.add_end(start, Type::Tuple {
+                first,
+                second,
+                rest: others,
+            }))
         }
     }
 
@@ -315,7 +340,10 @@ impl<'a> Parser<'a> {
                 Box::new(|p: &mut Parser<'a>| {
                     p.word1(0x7D, TRecord::Open)?; // }
                     let empty: &'a [&'a FieldType<'a>] = &[];
-                    Ok(p.add_end(start, Type::Record(empty, None)))
+                    Ok(p.add_end(start, Type::Record {
+                        fields: empty,
+                        ext: None,
+                    }))
                 }),
                 // Non-empty record
                 Box::new(|p: &mut Parser<'a>| {
@@ -335,7 +363,10 @@ impl<'a> Parser<'a> {
 
                                 let field = p.type_record_field()?;
                                 let fields = p.type_record_end(field)?;
-                                Ok(p.add_end(start, Type::Record(fields, Some(name_loc))))
+                                Ok(p.add_end(start, Type::Record {
+                                    fields,
+                                    ext: Some(name_loc),
+                                }))
                             }),
                             // Regular field: `{ name : Type }`
                             Box::new(|p: &mut Parser<'a>| {
@@ -350,7 +381,10 @@ impl<'a> Parser<'a> {
                                     typ: tipe,
                                 });
                                 let fields = p.type_record_end(field)?;
-                                Ok(p.add_end(start, Type::Record(fields, None)))
+                                Ok(p.add_end(start, Type::Record {
+                                    fields,
+                                    ext: None,
+                                }))
                             }),
                         ],
                     )

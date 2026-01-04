@@ -13,8 +13,8 @@ Located {
             column: 9,
         },
     },
-    value: Alias(
-        Located {
+    value: Alias {
+        pattern: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -29,7 +29,7 @@ Located {
                 "x",
             ),
         },
-        Located {
+        name: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -42,5 +42,5 @@ Located {
             },
             value: "foo",
         },
-    ),
+    },
 }

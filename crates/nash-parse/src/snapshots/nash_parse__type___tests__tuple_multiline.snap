@@ -13,8 +13,8 @@ Located {
             column: 2,
         },
     },
-    value: Tuple(
-        Located {
+    value: Tuple {
+        first: Located {
             region: Region {
                 start: Position {
                     line: 2,
@@ -25,8 +25,8 @@ Located {
                     column: 8,
                 },
             },
-            value: Type(
-                Region {
+            value: Type {
+                region: Region {
                     start: Position {
                         line: 2,
                         column: 5,
@@ -36,11 +36,11 @@ Located {
                         column: 8,
                     },
                 },
-                "Int",
-                [],
-            ),
+                name: "Int",
+                args: [],
+            },
         },
-        Located {
+        second: Located {
             region: Region {
                 start: Position {
                     line: 3,
@@ -51,8 +51,8 @@ Located {
                     column: 11,
                 },
             },
-            value: Type(
-                Region {
+            value: Type {
+                region: Region {
                     start: Position {
                         line: 3,
                         column: 5,
@@ -62,11 +62,11 @@ Located {
                         column: 11,
                     },
                 },
-                "String",
-                [],
-            ),
+                name: "String",
+                args: [],
+            },
         },
-        [
+        rest: [
             Located {
                 region: Region {
                     start: Position {
@@ -78,8 +78,8 @@ Located {
                         column: 9,
                     },
                 },
-                value: Type(
-                    Region {
+                value: Type {
+                    region: Region {
                         start: Position {
                             line: 4,
                             column: 5,
@@ -89,10 +89,10 @@ Located {
                             column: 9,
                         },
                     },
-                    "Bool",
-                    [],
-                ),
+                    name: "Bool",
+                    args: [],
+                },
             },
         ],
-    ),
+    },
 }

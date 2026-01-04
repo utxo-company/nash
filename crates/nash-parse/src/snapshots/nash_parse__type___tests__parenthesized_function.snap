@@ -13,8 +13,8 @@ Located {
             column: 29,
         },
     },
-    value: Lambda(
-        Located {
+    value: Lambda {
+        from: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -25,8 +25,8 @@ Located {
                     column: 8,
                 },
             },
-            value: Lambda(
-                Located {
+            value: Lambda {
+                from: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -41,7 +41,7 @@ Located {
                         "a",
                     ),
                 },
-                Located {
+                to: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -56,9 +56,9 @@ Located {
                         "b",
                     ),
                 },
-            ),
+            },
         },
-        Located {
+        to: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -69,8 +69,8 @@ Located {
                     column: 29,
                 },
             },
-            value: Lambda(
-                Located {
+            value: Lambda {
+                from: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -81,8 +81,8 @@ Located {
                             column: 19,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 1,
                                 column: 13,
@@ -92,8 +92,8 @@ Located {
                                 column: 17,
                             },
                         },
-                        "List",
-                        [
+                        name: "List",
+                        args: [
                             Located {
                                 region: Region {
                                     start: Position {
@@ -110,9 +110,9 @@ Located {
                                 ),
                             },
                         ],
-                    ),
+                    },
                 },
-                Located {
+                to: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -123,8 +123,8 @@ Located {
                             column: 29,
                         },
                     },
-                    value: Type(
-                        Region {
+                    value: Type {
+                        region: Region {
                             start: Position {
                                 line: 1,
                                 column: 23,
@@ -134,8 +134,8 @@ Located {
                                 column: 27,
                             },
                         },
-                        "List",
-                        [
+                        name: "List",
+                        args: [
                             Located {
                                 region: Region {
                                     start: Position {
@@ -152,9 +152,9 @@ Located {
                                 ),
                             },
                         ],
-                    ),
+                    },
                 },
-            ),
+            },
         },
-    ),
+    },
 }

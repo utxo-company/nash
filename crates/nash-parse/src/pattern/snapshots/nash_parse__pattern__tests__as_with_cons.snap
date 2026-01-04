@@ -13,8 +13,8 @@ Located {
             column: 21,
         },
     },
-    value: Alias(
-        Located {
+    value: Alias {
+        pattern: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -25,8 +25,8 @@ Located {
                     column: 13,
                 },
             },
-            value: Cons(
-                Located {
+            value: Cons {
+                head: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -41,7 +41,7 @@ Located {
                         "head",
                     ),
                 },
-                Located {
+                tail: Located {
                     region: Region {
                         start: Position {
                             line: 1,
@@ -56,9 +56,9 @@ Located {
                         "tail",
                     ),
                 },
-            ),
+            },
         },
-        Located {
+        name: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -71,5 +71,5 @@ Located {
             },
             value: "list",
         },
-    ),
+    },
 }

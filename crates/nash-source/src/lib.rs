@@ -95,21 +95,30 @@ pub enum Expr<'a> {
         branches: &'a [&'a IfBranch<'a>],
         final_else: &'a Located<Expr<'a>>,
     },
-    Let(&'a [&'a Located<Def<'a>>], &'a Located<Expr<'a>>),
+    Let {
+        defs: &'a [&'a Located<Def<'a>>],
+        body: &'a Located<Expr<'a>>,
+    },
     Case {
         scrutinee: &'a Located<Expr<'a>>,
         arms: &'a [&'a CaseArm<'a>],
     },
     Accessor(&'a str),
-    Access(&'a Located<Expr<'a>>, &'a Located<&'a str>),
-    Update(&'a Located<&'a str>, &'a [&'a FieldAssign<'a>]),
+    Access {
+        record: &'a Located<Expr<'a>>,
+        field: &'a Located<&'a str>,
+    },
+    Update {
+        record: &'a Located<&'a str>,
+        fields: &'a [&'a FieldAssign<'a>],
+    },
     Record(&'a [&'a FieldAssign<'a>]),
     Unit,
-    Tuple(
-        &'a Located<Expr<'a>>,
-        &'a Located<Expr<'a>>,
-        &'a [&'a Located<Expr<'a>>],
-    ),
+    Tuple {
+        first: &'a Located<Expr<'a>>,
+        second: &'a Located<Expr<'a>>,
+        rest: &'a [&'a Located<Expr<'a>>],
+    },
 }
 
 #[derive(Debug)]
@@ -126,13 +135,16 @@ pub struct IfBranch<'a> {
 
 #[derive(Debug)]
 pub enum Def<'a> {
-    Define(
-        &'a Located<&'a str>,
-        &'a [&'a Located<Pattern<'a>>],
-        &'a Located<Expr<'a>>,
-        Option<&'a Located<Type<'a>>>,
-    ),
-    Destruct(&'a Located<Pattern<'a>>, &'a Located<Expr<'a>>),
+    Define {
+        name: &'a Located<&'a str>,
+        args: &'a [&'a Located<Pattern<'a>>],
+        body: &'a Located<Expr<'a>>,
+        annotation: Option<&'a Located<Type<'a>>>,
+    },
+    Destruct {
+        pattern: &'a Located<Pattern<'a>>,
+        body: &'a Located<Expr<'a>>,
+    },
 }
 
 #[derive(Debug)]
@@ -152,34 +164,64 @@ pub enum Pattern<'a> {
     Anything,
     Var(&'a str),
     Record(&'a [&'a Located<&'a str>]),
-    Alias(&'a Located<Pattern<'a>>, &'a Located<&'a str>),
+    Alias {
+        pattern: &'a Located<Pattern<'a>>,
+        name: &'a Located<&'a str>,
+    },
     Unit,
-    Tuple(
-        &'a Located<Pattern<'a>>,
-        &'a Located<Pattern<'a>>,
-        &'a [&'a Located<Pattern<'a>>],
-    ),
-    Ctor(Region, &'a str, &'a [&'a Located<Pattern<'a>>]),
-    CtorQual(Region, &'a str, &'a str, &'a [&'a Located<Pattern<'a>>]),
+    Tuple {
+        first: &'a Located<Pattern<'a>>,
+        second: &'a Located<Pattern<'a>>,
+        rest: &'a [&'a Located<Pattern<'a>>],
+    },
+    Ctor {
+        region: Region,
+        name: &'a str,
+        args: &'a [&'a Located<Pattern<'a>>],
+    },
+    CtorQual {
+        region: Region,
+        module: &'a str,
+        name: &'a str,
+        args: &'a [&'a Located<Pattern<'a>>],
+    },
     List(&'a [&'a Located<Pattern<'a>>]),
-    Cons(&'a Located<Pattern<'a>>, &'a Located<Pattern<'a>>),
+    Cons {
+        head: &'a Located<Pattern<'a>>,
+        tail: &'a Located<Pattern<'a>>,
+    },
     Str(&'a str),
     Int(i128),
 }
 
 #[derive(Debug)]
 pub enum Type<'a> {
-    Lambda(&'a Located<Type<'a>>, &'a Located<Type<'a>>),
+    Lambda {
+        from: &'a Located<Type<'a>>,
+        to: &'a Located<Type<'a>>,
+    },
     Var(&'a str),
-    Type(Region, &'a str, &'a [&'a Located<Type<'a>>]),
-    TypeQual(Region, &'a str, &'a str, &'a [&'a Located<Type<'a>>]),
-    Record(&'a [&'a FieldType<'a>], Option<&'a Located<&'a str>>),
+    Type {
+        region: Region,
+        name: &'a str,
+        args: &'a [&'a Located<Type<'a>>],
+    },
+    TypeQual {
+        region: Region,
+        module: &'a str,
+        name: &'a str,
+        args: &'a [&'a Located<Type<'a>>],
+    },
+    Record {
+        fields: &'a [&'a FieldType<'a>],
+        ext: Option<&'a Located<&'a str>>,
+    },
     Unit,
-    Tuple(
-        &'a Located<Type<'a>>,
-        &'a Located<Type<'a>>,
-        &'a [&'a Located<Type<'a>>],
-    ),
+    Tuple {
+        first: &'a Located<Type<'a>>,
+        second: &'a Located<Type<'a>>,
+        rest: &'a [&'a Located<Type<'a>>],
+    },
 }
 
 #[derive(Debug)]

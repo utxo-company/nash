@@ -13,8 +13,8 @@ Located {
             column: 29,
         },
     },
-    value: Record(
-        [
+    value: Record {
+        fields: [
             FieldType {
                 field: Located {
                     region: Region {
@@ -40,8 +40,8 @@ Located {
                             column: 27,
                         },
                     },
-                    value: Lambda(
-                        Located {
+                    value: Lambda {
+                        from: Located {
                             region: Region {
                                 start: Position {
                                     line: 1,
@@ -56,7 +56,7 @@ Located {
                                 "msg",
                             ),
                         },
-                        Located {
+                        to: Located {
                             region: Region {
                                 start: Position {
                                     line: 1,
@@ -67,8 +67,8 @@ Located {
                                     column: 27,
                                 },
                             },
-                            value: Type(
-                                Region {
+                            value: Type {
+                                region: Region {
                                     start: Position {
                                         line: 1,
                                         column: 20,
@@ -78,8 +78,8 @@ Located {
                                         column: 23,
                                     },
                                 },
-                                "Cmd",
-                                [
+                                name: "Cmd",
+                                args: [
                                     Located {
                                         region: Region {
                                             start: Position {
@@ -96,12 +96,12 @@ Located {
                                         ),
                                     },
                                 ],
-                            ),
+                            },
                         },
-                    ),
+                    },
                 },
             },
         ],
-        None,
-    ),
+        ext: None,
+    },
 }

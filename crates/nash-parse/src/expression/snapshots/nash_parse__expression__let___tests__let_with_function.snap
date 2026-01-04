@@ -13,8 +13,8 @@ Located {
             column: 1,
         },
     },
-    value: Let(
-        [
+    value: Let {
+        defs: [
             Located {
                 region: Region {
                     start: Position {
@@ -26,8 +26,8 @@ Located {
                         column: 1,
                     },
                 },
-                value: Define(
-                    Located {
+                value: Define {
+                    name: Located {
                         region: Region {
                             start: Position {
                                 line: 2,
@@ -40,7 +40,7 @@ Located {
                         },
                         value: "f",
                     },
-                    [
+                    args: [
                         Located {
                             region: Region {
                                 start: Position {
@@ -57,7 +57,7 @@ Located {
                             ),
                         },
                     ],
-                    Located {
+                    body: Located {
                         region: Region {
                             start: Position {
                                 line: 2,
@@ -73,11 +73,11 @@ Located {
                             name: "x",
                         },
                     },
-                    None,
-                ),
+                    annotation: None,
+                },
             },
         ],
-        Located {
+        body: Located {
             region: Region {
                 start: Position {
                     line: 4,
@@ -124,5 +124,5 @@ Located {
                 ],
             },
         },
-    ),
+    },
 }

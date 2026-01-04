@@ -13,8 +13,8 @@ Located {
             column: 14,
         },
     },
-    value: Ctor(
-        Region {
+    value: Ctor {
+        region: Region {
             start: Position {
                 line: 1,
                 column: 1,
@@ -24,8 +24,8 @@ Located {
                 column: 5,
             },
         },
-        "Just",
-        [
+        name: "Just",
+        args: [
             Located {
                 region: Region {
                     start: Position {
@@ -37,8 +37,8 @@ Located {
                         column: 13,
                     },
                 },
-                value: Ctor(
-                    Region {
+                value: Ctor {
+                    region: Region {
                         start: Position {
                             line: 1,
                             column: 7,
@@ -48,8 +48,8 @@ Located {
                             column: 11,
                         },
                     },
-                    "Just",
-                    [
+                    name: "Just",
+                    args: [
                         Located {
                             region: Region {
                                 start: Position {
@@ -66,8 +66,8 @@ Located {
                             ),
                         },
                     ],
-                ),
+                },
             },
         ],
-    ),
+    },
 }

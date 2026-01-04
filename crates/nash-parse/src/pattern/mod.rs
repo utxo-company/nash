@@ -176,8 +176,17 @@ impl<'a> Parser<'a> {
 
         let args_slice = args.into_bump_slice();
         let pattern = match module {
-            Some(m) => Pattern::CtorQual(region, m, name, args_slice),
-            None => Pattern::Ctor(region, name, args_slice),
+            Some(module) => Pattern::CtorQual {
+                region,
+                module,
+                name,
+                args: args_slice,
+            },
+            None => Pattern::Ctor {
+                region,
+                name,
+                args: args_slice,
+            },
         };
 
         Ok((self.add_end(start, pattern), end))
@@ -259,7 +268,13 @@ impl<'a> Parser<'a> {
                     // Build up cons chain first
                     let base = self.build_cons_chain(&mut patterns, current);
                     // Then wrap in alias
-                    return Ok((self.add_end(start, Pattern::Alias(base, alias)), alias_end));
+                    return Ok((
+                        self.add_end(start, Pattern::Alias {
+                            pattern: base,
+                            name: alias,
+                        }),
+                        alias_end,
+                    ));
                 }
                 ConsOrAs::Done => {
                     // Build up cons chain
@@ -286,7 +301,10 @@ impl<'a> Parser<'a> {
                     Position::new(head.region.start.line, head.region.start.column),
                     Position::new(result.region.end.line, result.region.end.column),
                 );
-                result = self.alloc(Located::at(region, Pattern::Cons(head, result)));
+                result = self.alloc(Located::at(region, Pattern::Cons {
+                    head,
+                    tail: result,
+                }));
             }
             result
         }

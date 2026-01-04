@@ -92,7 +92,11 @@ impl<'a> Parser<'a> {
                     let end = self.get_position();
                     let region = Region::new(start, end);
                     let empty: &'a [&'a Located<Pattern<'a>>] = &[];
-                    Ok(self.add_end(start, Pattern::Ctor(region, name, empty)))
+                    Ok(self.add_end(start, Pattern::Ctor {
+                        region,
+                        name,
+                        args: empty,
+                    }))
                 }
             }
             _ => Err(error::Pattern::Start(row, col)),
@@ -132,13 +136,22 @@ impl<'a> Parser<'a> {
             let end = self.get_position();
             let region = Region::new(start, end);
             let empty: &'a [&'a Located<Pattern<'a>>] = &[];
-            Ok(self.add_end(start, Pattern::CtorQual(region, module, name, empty)))
+            Ok(self.add_end(start, Pattern::CtorQual {
+                region,
+                module,
+                name,
+                args: empty,
+            }))
         } else {
             // No dot means unqualified
             let end = self.get_position();
             let region = Region::new(start, end);
             let empty: &'a [&'a Located<Pattern<'a>>] = &[];
-            Ok(self.add_end(start, Pattern::Ctor(region, full, empty)))
+            Ok(self.add_end(start, Pattern::Ctor {
+                region,
+                name: full,
+                args: empty,
+            }))
         }
     }
 

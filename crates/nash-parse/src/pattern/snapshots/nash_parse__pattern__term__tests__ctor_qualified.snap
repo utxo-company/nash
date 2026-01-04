@@ -13,8 +13,8 @@ Located {
             column: 14,
         },
     },
-    value: CtorQual(
-        Region {
+    value: CtorQual {
+        region: Region {
             start: Position {
                 line: 1,
                 column: 1,
@@ -24,8 +24,8 @@ Located {
                 column: 14,
             },
         },
-        "Maybe",
-        "Nothing",
-        [],
-    ),
+        module: "Maybe",
+        name: "Nothing",
+        args: [],
+    },
 }

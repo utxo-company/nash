@@ -13,8 +13,8 @@ Located {
             column: 25,
         },
     },
-    value: Update(
-        Located {
+    value: Update {
+        record: Located {
             region: Region {
                 start: Position {
                     line: 1,
@@ -27,7 +27,7 @@ Located {
             },
             value: "model",
         },
-        [
+        fields: [
             FieldAssign {
                 field: Located {
                     region: Region {
@@ -89,5 +89,5 @@ Located {
                 },
             },
         ],
-    ),
+    },
 }
