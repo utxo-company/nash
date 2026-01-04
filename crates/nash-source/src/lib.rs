@@ -245,7 +245,10 @@ pub struct FieldType<'a> {
 #[derive(Debug)]
 pub enum Docs<'a> {
     NoDocs(Region),
-    YesDocs(&'a Comment<'a>, &'a [&'a (&'a str, &'a Comment<'a>)]),
+    YesDocs {
+        overview: &'a Comment<'a>,
+        comments: &'a [&'a (&'a str, &'a Comment<'a>)],
+    },
 }
 
 #[derive(Debug)]
@@ -260,17 +263,26 @@ pub struct Snippet<'a> {
     pub off_col: u16,
 }
 
+#[derive(Debug)]
 pub enum Exposing<'a> {
     Open,
     Explicit(&'a [&'a Exposed<'a>]),
 }
 
+#[derive(Debug)]
 pub enum Exposed<'a> {
     Lower(&'a Located<&'a str>),
-    Upper(&'a Located<&'a str>, Privacy),
-    Operator(Region, &'a str),
+    Upper {
+        name: &'a Located<&'a str>,
+        privacy: Privacy,
+    },
+    Operator {
+        region: Region,
+        op: &'a str,
+    },
 }
 
+#[derive(Debug)]
 pub enum Privacy {
     Public(Region),
     Private,
