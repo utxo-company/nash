@@ -17,6 +17,7 @@ pub struct Import<'a> {
     pub exposing: &'a Exposing<'a>,
 }
 
+#[derive(Debug)]
 pub struct Value<'a> {
     pub name: &'a Located<&'a str>,
     pub arguments: &'a [&'a Located<Pattern<'a>>],
@@ -27,6 +28,7 @@ pub struct Value<'a> {
 // type Maybe a
 //   = Just a
 //   | Nothing
+#[derive(Debug)]
 pub struct Union<'a> {
     pub name: &'a Located<&'a str>,
     // type vars
@@ -34,11 +36,13 @@ pub struct Union<'a> {
     pub ctors: &'a [&'a Ctor<'a>],
 }
 
+#[derive(Debug)]
 pub struct Ctor<'a> {
     pub name: &'a Located<&'a str>,
     pub arguments: &'a [&'a Located<Type<'a>>],
 }
 
+#[derive(Debug)]
 pub struct Alias<'a> {
     pub name: &'a Located<&'a str>,
     // type vars
@@ -46,6 +50,7 @@ pub struct Alias<'a> {
     pub typ: &'a Located<Type<'a>>,
 }
 
+#[derive(Debug)]
 pub struct Infix<'a> {
     pub op: &'a str,
     pub associativity: Associativity,
@@ -53,14 +58,14 @@ pub struct Infix<'a> {
     pub name: &'a str,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Associativity {
     Left,
     None,
     Right,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Precedence(pub u16);
 
 #[derive(Debug)]
@@ -79,10 +84,10 @@ pub enum Expr<'a> {
     List(&'a [&'a Located<Expr<'a>>]),
     Op(&'a str),
     Negate(&'a Located<Expr<'a>>),
-    BinOps(
-        &'a [&'a (&'a Located<Expr<'a>>, &'a Located<&'a str>)],
-        &'a Located<Expr<'a>>,
-    ),
+    BinOps {
+        operands: &'a [&'a BinOpOperand<'a>],
+        last: &'a Located<Expr<'a>>,
+    },
     Lambda {
         parameters: &'a [&'a Located<Pattern<'a>>],
         body: &'a Located<Expr<'a>>,
@@ -131,6 +136,13 @@ pub enum VarType {
 pub struct IfBranch<'a> {
     pub condition: &'a Located<Expr<'a>>,
     pub then_branch: &'a Located<Expr<'a>>,
+}
+
+/// An operand in a binary operator chain: expression followed by operator.
+#[derive(Debug)]
+pub struct BinOpOperand<'a> {
+    pub expr: &'a Located<Expr<'a>>,
+    pub op: &'a Located<&'a str>,
 }
 
 #[derive(Debug)]
@@ -230,13 +242,16 @@ pub struct FieldType<'a> {
     pub typ: &'a Located<Type<'a>>,
 }
 
+#[derive(Debug)]
 pub enum Docs<'a> {
     NoDocs(Region),
     YesDocs(&'a Comment<'a>, &'a [&'a (&'a str, &'a Comment<'a>)]),
 }
 
+#[derive(Debug)]
 pub struct Comment<'a>(pub &'a Snippet<'a>);
 
+#[derive(Debug)]
 pub struct Snippet<'a> {
     pub data: &'a [u8], // already the relevant slice
     // offset: usize,
