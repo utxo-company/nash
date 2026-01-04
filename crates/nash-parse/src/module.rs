@@ -10,9 +10,9 @@
 use nash_region::{Located, Region};
 use nash_source::{Alias, Docs, Exposing, Import, Infix, Module, Union, Value};
 
+use crate::Parser;
 use crate::declaration::Decl;
 use crate::error;
-use crate::Parser;
 
 impl<'a> Parser<'a> {
     /// Parse a module header.
@@ -43,11 +43,19 @@ impl<'a> Parser<'a> {
         self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
 
         // Must have 'exposing' keyword
-        self.keyword_exposing(|row, col| error::Module::Exposing(self.bump.alloc(error::Exposing::Start(row, col)), row, col))?;
+        self.keyword_exposing(|row, col| {
+            error::Module::Exposing(self.bump.alloc(error::Exposing::Start(row, col)), row, col)
+        })?;
 
         self.chomp_and_check_indent(
             |space, row, col| error::Module::Space(space, row, col),
-            |row, col| error::Module::Exposing(self.bump.alloc(error::Exposing::IndentValue(row, col)), row, col),
+            |row, col| {
+                error::Module::Exposing(
+                    self.bump.alloc(error::Exposing::IndentValue(row, col)),
+                    row,
+                    col,
+                )
+            },
         )?;
 
         // Parse the exposing list, wrapping errors
@@ -216,8 +224,7 @@ impl<'a> Parser<'a> {
                         self.restore_state(state);
                     }
                     // Default: name = None, exports = Open
-                    let default_exports =
-                        self.alloc(Located::at(Region::one(), Exposing::Open));
+                    let default_exports = self.alloc(Located::at(Region::one(), Exposing::Open));
                     (None, default_exports)
                 }
             }
@@ -363,46 +370,55 @@ mod tests {
 
     #[test]
     fn module_with_imports() {
-        assert_module_snapshot!(r#"
+        assert_module_snapshot!(
+            r#"
             module Main exposing (..)
 
             import List
             import Maybe exposing (Maybe(..))
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn module_with_value() {
-        assert_module_snapshot!(r#"
+        assert_module_snapshot!(
+            r#"
             module Main exposing (..)
 
             main = 42
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn module_with_type() {
-        assert_module_snapshot!(r#"
+        assert_module_snapshot!(
+            r#"
             module Main exposing (..)
 
             type Maybe a
                 = Just a
                 | Nothing
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn module_with_alias() {
-        assert_module_snapshot!(r#"
+        assert_module_snapshot!(
+            r#"
             module Main exposing (..)
 
             type alias Point = { x : Int, y : Int }
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn module_full() {
-        assert_module_snapshot!(r#"
+        assert_module_snapshot!(
+            r#"
             module Main exposing (main, Model, Msg(..))
 
             import Html exposing (div)
@@ -415,7 +431,8 @@ mod tests {
                 | Decrement
 
             main = 0
-        "#);
+        "#
+        );
     }
 
     #[test]
@@ -426,12 +443,14 @@ mod tests {
 
     #[test]
     fn module_with_infix() {
-        assert_module_snapshot!(r#"
+        assert_module_snapshot!(
+            r#"
             module Main exposing (..)
 
             infix left 6 (|>) = apR
 
             apR f x = f x
-        "#);
+        "#
+        );
     }
 }

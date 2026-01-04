@@ -11,8 +11,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::{Expr, FieldAssign};
 
-use crate::error::{self, Record};
 use crate::Parser;
+use crate::error::{self, Record};
 
 impl<'a> Parser<'a> {
     /// Parse a record expression.
@@ -120,10 +120,13 @@ impl<'a> Parser<'a> {
         self.chomp_fields(&mut fields)?;
 
         let slice = fields.into_bump_slice();
-        Ok(self.add_end(start, Expr::Update {
-            record: target,
-            fields: slice,
-        }))
+        Ok(self.add_end(
+            start,
+            Expr::Update {
+                record: target,
+                fields: slice,
+            },
+        ))
     }
 
     /// Parse a record literal starting after the first '='.

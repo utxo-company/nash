@@ -5,8 +5,8 @@
 use nash_region::{Located, Position};
 use nash_source::{CaseArm, Expr};
 
-use crate::error::{self, Case};
 use crate::Parser;
+use crate::error::{self, Case};
 
 impl<'a> Parser<'a> {
     /// Parse a case expression.
@@ -37,10 +37,10 @@ impl<'a> Parser<'a> {
                 p.chomp_and_check_indent(Case::Space, Case::IndentExpr)?;
 
                 // Parse the scrutinee expression
-                let (scrutinee, scrutinee_end) =
-                    p.specialize(|bump, e, row, col| Case::Expr(bump.alloc(e), row, col), |p| {
-                        p.expression()
-                    })?;
+                let (scrutinee, scrutinee_end) = p.specialize(
+                    |bump, e, row, col| Case::Expr(bump.alloc(e), row, col),
+                    |p| p.expression(),
+                )?;
 
                 // Check indent for "of" keyword
                 p.check_indent(scrutinee_end.line, scrutinee_end.column, Case::IndentOf)?;
@@ -163,34 +163,39 @@ mod tests {
 
     #[test]
     fn case_multiple_branches() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             case x of
                 0 -> "zero"
                 1 -> "one"
                 _ -> "other"
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn case_with_patterns() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             case list of
                 [] -> 0
                 [x] -> x
                 x :: xs -> x
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn case_nested() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             case x of
                 Just y ->
                     case y of
                         Just z -> z
                         Nothing -> 0
                 Nothing -> 0
-        "#);
+        "#
+        );
     }
-
 }

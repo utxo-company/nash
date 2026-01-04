@@ -8,8 +8,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position, Region};
 use nash_source::Expr;
 
-use crate::error::{self, Func};
 use crate::Parser;
+use crate::error::{self, Func};
 
 impl<'a> Parser<'a> {
     /// Parse a lambda expression: `\arg1 arg2 -> body`.

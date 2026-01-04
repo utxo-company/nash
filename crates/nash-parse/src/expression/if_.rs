@@ -9,8 +9,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position, Region};
 use nash_source::{Expr, IfBranch};
 
-use crate::error::{self, If};
 use crate::Parser;
+use crate::error::{self, If};
 
 impl<'a> Parser<'a> {
     /// Parse an if expression: `if cond then branch else branch`.
@@ -170,12 +170,14 @@ mod tests {
 
     #[test]
     fn if_multiline() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             if condition then
                 trueBranch
             else
                 falseBranch
-        "#);
+        "#
+        );
     }
 
     #[test]
@@ -190,13 +192,15 @@ mod tests {
 
     #[test]
     fn if_else_if_multiline() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             if a then
                 1
             else if b then
                 2
             else
                 3
-        "#);
+        "#
+        );
     }
 }

@@ -8,8 +8,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::Pattern;
 
-use crate::error::{self, PRecord};
 use crate::Parser;
+use crate::error::{self, PRecord};
 
 impl<'a> Parser<'a> {
     /// Parse a record pattern: `{ x, y, z }`

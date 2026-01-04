@@ -11,8 +11,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::Expr;
 
-use crate::error::{self, Tuple};
 use crate::Parser;
+use crate::error::{self, Tuple};
 
 impl<'a> Parser<'a> {
     /// Parse a tuple, unit, or parenthesized expression.
@@ -91,11 +91,14 @@ impl<'a> Parser<'a> {
                                         // Parse the negation as part of the expression
                                         let neg_start = Position::new(start.line, start.column + 1);
                                         let inner = p.specialize(
-                                            |bump, e, row, col| Tuple::Expr(bump.alloc(e), row, col),
+                                            |bump, e, row, col| {
+                                                Tuple::Expr(bump.alloc(e), row, col)
+                                            },
                                             |p| p.term(),
                                         )?;
                                         let neg_end = p.get_position();
-                                        let neg_region = nash_region::Region::new(neg_start, neg_end);
+                                        let neg_region =
+                                            nash_region::Region::new(neg_start, neg_end);
                                         let negated = p.alloc(nash_region::Located::at(
                                             neg_region,
                                             Expr::Negate(inner),
@@ -105,11 +108,17 @@ impl<'a> Parser<'a> {
                                         p.chomp(Tuple::Space)?;
 
                                         let (full_expr, expr_end) = p.specialize(
-                                            |bump, e, row, col| Tuple::Expr(bump.alloc(e), row, col),
+                                            |bump, e, row, col| {
+                                                Tuple::Expr(bump.alloc(e), row, col)
+                                            },
                                             |p| p.chomp_expr_end(start, negated, vec![], neg_end),
                                         )?;
 
-                                        p.check_indent(expr_end.line, expr_end.column, Tuple::IndentEnd)?;
+                                        p.check_indent(
+                                            expr_end.line,
+                                            expr_end.column,
+                                            Tuple::IndentEnd,
+                                        )?;
                                         p.chomp_tuple_end(start, full_expr)
                                     }),
                                 ],
@@ -215,11 +224,14 @@ impl<'a> Parser<'a> {
             // Tuple: need at least 2 elements
             let second = rest.remove(0);
             let others = rest.into_bump_slice();
-            Ok(self.add_end(start, Expr::Tuple {
-                first,
-                second,
-                rest: others,
-            }))
+            Ok(self.add_end(
+                start,
+                Expr::Tuple {
+                    first,
+                    second,
+                    rest: others,
+                },
+            ))
         }
     }
 }

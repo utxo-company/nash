@@ -269,10 +269,13 @@ impl<'a> Parser<'a> {
                     let base = self.build_cons_chain(&mut patterns, current);
                     // Then wrap in alias
                     return Ok((
-                        self.add_end(start, Pattern::Alias {
-                            pattern: base,
-                            name: alias,
-                        }),
+                        self.add_end(
+                            start,
+                            Pattern::Alias {
+                                pattern: base,
+                                name: alias,
+                            },
+                        ),
                         alias_end,
                     ));
                 }
@@ -301,10 +304,7 @@ impl<'a> Parser<'a> {
                     Position::new(head.region.start.line, head.region.start.column),
                     Position::new(result.region.end.line, result.region.end.column),
                 );
-                result = self.alloc(Located::at(region, Pattern::Cons {
-                    head,
-                    tail: result,
-                }));
+                result = self.alloc(Located::at(region, Pattern::Cons { head, tail: result }));
             }
             result
         }

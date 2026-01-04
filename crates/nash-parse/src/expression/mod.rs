@@ -6,8 +6,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position, Region};
 use nash_source::{BinOpOperand, Expr};
 
-use crate::error;
 use crate::Parser;
+use crate::error;
 
 mod accessor;
 mod case;
@@ -40,9 +40,7 @@ impl<'a> Parser<'a> {
     ///
     /// Currently implements: lambda, possiblyNegativeTerm + function application.
     /// TODO: let, if, case, operators
-    pub fn expression(
-        &mut self,
-    ) -> Result<(&'a Located<Expr<'a>>, Position), error::Expr<'a>> {
+    pub fn expression(&mut self) -> Result<(&'a Located<Expr<'a>>, Position), error::Expr<'a>> {
         let start = self.get_position();
 
         self.one_of(
@@ -98,12 +96,7 @@ impl<'a> Parser<'a> {
         let mut current_end = end;
 
         loop {
-            let state_for_fallback = (
-                ops.clone(),
-                current_expr,
-                current_args.clone(),
-                current_end,
-            );
+            let state_for_fallback = (ops.clone(), current_expr, current_args.clone(), current_end);
 
             let result = self.one_of_with_fallback(
                 vec![
@@ -128,14 +121,16 @@ impl<'a> Parser<'a> {
                         // Save positions for negative-term detection
                         let op_start = p.get_position();
 
-                        let op = p.add_location_operator(error::Expr::Start, error::Expr::OperatorReserved)?;
+                        let op = p.add_location_operator(
+                            error::Expr::Start,
+                            error::Expr::OperatorReserved,
+                        )?;
                         let op_name = op.value;
                         let op_end = p.get_position();
 
-                        p.chomp_and_check_indent(
-                            error::Expr::Space,
-                            |row, col| error::Expr::IndentOperatorRight(op_name, row, col),
-                        )?;
+                        p.chomp_and_check_indent(error::Expr::Space, |row, col| {
+                            error::Expr::IndentOperatorRight(op_name, row, col)
+                        })?;
 
                         let new_start = p.get_position();
 
@@ -173,7 +168,9 @@ impl<'a> Parser<'a> {
                                     // Parse a "final" expression (let, case, if, lambda)
                                     Box::new(|p: &mut Parser<'a>| {
                                         let (final_expr, final_end) = p.one_of(
-                                            |row, col| error::Expr::OperatorRight(op_name, row, col),
+                                            |row, col| {
+                                                error::Expr::OperatorRight(op_name, row, col)
+                                            },
                                             vec![
                                                 Box::new(|p: &mut Parser<'a>| p.let_(new_start)),
                                                 Box::new(|p| p.case_(new_start)),
@@ -200,7 +197,10 @@ impl<'a> Parser<'a> {
                 ExprEndState::MoreOps(op, new_expr, new_end) => {
                     // Push (toCall current_expr current_args, op) onto ops
                     let call_expr = to_call(self, start, current_expr, current_args.clone());
-                    let operand = self.alloc(BinOpOperand { expr: call_expr, op });
+                    let operand = self.alloc(BinOpOperand {
+                        expr: call_expr,
+                        op,
+                    });
                     ops.push(operand);
                     current_expr = new_expr;
                     current_args = Vec::new();
@@ -209,15 +209,18 @@ impl<'a> Parser<'a> {
                 ExprEndState::Final(op, final_expr, final_end) => {
                     // Push current and build final Binops
                     let call_expr = to_call(self, start, current_expr, current_args);
-                    let operand = self.alloc(BinOpOperand { expr: call_expr, op });
+                    let operand = self.alloc(BinOpOperand {
+                        expr: call_expr,
+                        op,
+                    });
                     ops.push(operand);
 
                     let ops_slice = ops.into_bump_slice();
-                    let binops = Expr::BinOps { operands: ops_slice, last: final_expr };
-                    let result = self.alloc(Located::at(
-                        Region::new(start, final_end),
-                        binops,
-                    ));
+                    let binops = Expr::BinOps {
+                        operands: ops_slice,
+                        last: final_expr,
+                    };
+                    let result = self.alloc(Located::at(Region::new(start, final_end), binops));
                     return Ok((result, final_end));
                 }
                 ExprEndState::Done => {
@@ -229,11 +232,11 @@ impl<'a> Parser<'a> {
                         return Ok((final_call, saved_end));
                     } else {
                         let ops_slice = saved_ops.into_bump_slice();
-                        let binops = Expr::BinOps { operands: ops_slice, last: final_call };
-                        let result = self.alloc(Located::at(
-                            Region::new(start, saved_end),
-                            binops,
-                        ));
+                        let binops = Expr::BinOps {
+                            operands: ops_slice,
+                            last: final_call,
+                        };
+                        let result = self.alloc(Located::at(Region::new(start, saved_end), binops));
                         return Ok((result, saved_end));
                     }
                 }
@@ -346,17 +349,9 @@ enum ExprEndState<'a> {
     /// More function arguments accumulated
     MoreArgs(Vec<&'a Located<Expr<'a>>>, Position),
     /// Binary operator found, continue parsing chain
-    MoreOps(
-        &'a Located<&'a str>,
-        &'a Located<Expr<'a>>,
-        Position,
-    ),
+    MoreOps(&'a Located<&'a str>, &'a Located<Expr<'a>>, Position),
     /// Final expression found (let, case, if, lambda) after operator
-    Final(
-        &'a Located<&'a str>,
-        &'a Located<Expr<'a>>,
-        Position,
-    ),
+    Final(&'a Located<&'a str>, &'a Located<Expr<'a>>, Position),
     /// Done parsing, finalize expression
     Done,
 }

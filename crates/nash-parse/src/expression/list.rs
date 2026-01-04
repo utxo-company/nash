@@ -6,8 +6,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::Expr;
 
-use crate::error::{self, List};
 use crate::Parser;
+use crate::error::{self, List};
 
 impl<'a> Parser<'a> {
     /// Parse a list expression.

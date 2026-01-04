@@ -1,8 +1,8 @@
 use bumpalo::Bump;
 use nash_region::{Located, Position, Region};
 
-pub mod error;
 mod declaration;
+pub mod error;
 mod exposing;
 mod expression;
 mod import;
@@ -353,7 +353,11 @@ impl<'a> Parser<'a> {
     /// Returns `Ok(())` and advances if the byte matches.
     /// Returns `Err` without consuming if it doesn't match.
     #[inline]
-    pub fn word1<E>(&mut self, expected: u8, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+    pub fn word1<E>(
+        &mut self,
+        expected: u8,
+        to_error: impl FnOnce(Row, Col) -> E,
+    ) -> Result<(), E> {
         if self.peek() == Some(expected) {
             self.advance();
             Ok(())

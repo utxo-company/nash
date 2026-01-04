@@ -5,8 +5,8 @@
 use nash_region::{Located, Position, Region};
 use nash_source::Expr;
 
-use crate::error;
 use crate::Parser;
+use crate::error;
 
 impl<'a> Parser<'a> {
     /// Parse field accessor `.fieldName`.

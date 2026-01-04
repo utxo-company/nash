@@ -7,8 +7,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::{Ctor, Union};
 
-use crate::error::CustomType;
 use crate::Parser;
+use crate::error::CustomType;
 
 impl<'a> Parser<'a> {
     /// Parse the body of a custom type declaration (after "type").
@@ -110,7 +110,10 @@ impl<'a> Parser<'a> {
             |p| p.chomp_variant_args(name_end),
         )?;
 
-        let ctor = self.alloc(Ctor { name, arguments: args });
+        let ctor = self.alloc(Ctor {
+            name,
+            arguments: args,
+        });
         Ok((ctor, end))
     }
 
@@ -124,8 +127,8 @@ impl<'a> Parser<'a> {
         loop {
             let args_clone = args.clone();
 
-            let result: Result<VariantArgState, crate::error::Type<'a>> =
-                self.one_of_with_fallback(
+            let result: Result<VariantArgState, crate::error::Type<'a>> = self
+                .one_of_with_fallback(
                     vec![Box::new(|p: &mut Parser<'a>| {
                         p.check_indent(end.line, end.column, crate::error::Type::IndentStart)?;
                         let arg = p.type_term()?;

@@ -7,8 +7,8 @@
 use nash_region::{Position, Region};
 use nash_source::Pattern;
 
-use crate::error;
 use crate::Parser;
+use crate::error;
 
 impl<'a> Parser<'a> {
     /// Parse termHelp patterns: wildcard, var, ctor, number, string.
@@ -92,11 +92,14 @@ impl<'a> Parser<'a> {
                     let end = self.get_position();
                     let region = Region::new(start, end);
                     let empty: &'a [&'a Located<Pattern<'a>>] = &[];
-                    Ok(self.add_end(start, Pattern::Ctor {
-                        region,
-                        name,
-                        args: empty,
-                    }))
+                    Ok(self.add_end(
+                        start,
+                        Pattern::Ctor {
+                            region,
+                            name,
+                            args: empty,
+                        },
+                    ))
                 }
             }
             _ => Err(error::Pattern::Start(row, col)),
@@ -136,22 +139,28 @@ impl<'a> Parser<'a> {
             let end = self.get_position();
             let region = Region::new(start, end);
             let empty: &'a [&'a Located<Pattern<'a>>] = &[];
-            Ok(self.add_end(start, Pattern::CtorQual {
-                region,
-                module,
-                name,
-                args: empty,
-            }))
+            Ok(self.add_end(
+                start,
+                Pattern::CtorQual {
+                    region,
+                    module,
+                    name,
+                    args: empty,
+                },
+            ))
         } else {
             // No dot means unqualified
             let end = self.get_position();
             let region = Region::new(start, end);
             let empty: &'a [&'a Located<Pattern<'a>>] = &[];
-            Ok(self.add_end(start, Pattern::Ctor {
-                region,
-                name: full,
-                args: empty,
-            }))
+            Ok(self.add_end(
+                start,
+                Pattern::Ctor {
+                    region,
+                    name: full,
+                    args: empty,
+                },
+            ))
         }
     }
 
@@ -160,10 +169,9 @@ impl<'a> Parser<'a> {
         &mut self,
         start: Position,
     ) -> Result<&'a Located<Pattern<'a>>, error::Pattern<'a>> {
-        let n = self.number_literal(
-            error::Pattern::Start,
-            |num_err, row, col| error::Pattern::Number(num_err, row, col),
-        )?;
+        let n = self.number_literal(error::Pattern::Start, |num_err, row, col| {
+            error::Pattern::Number(num_err, row, col)
+        })?;
         Ok(self.add_end(start, Pattern::Int(n)))
     }
 
@@ -172,13 +180,11 @@ impl<'a> Parser<'a> {
         &mut self,
         start: Position,
     ) -> Result<&'a Located<Pattern<'a>>, error::Pattern<'a>> {
-        let s = self.string_literal(
-            error::Pattern::Start,
-            |str_err, row, col| error::Pattern::String(str_err, row, col),
-        )?;
+        let s = self.string_literal(error::Pattern::Start, |str_err, row, col| {
+            error::Pattern::String(str_err, row, col)
+        })?;
         Ok(self.add_end(start, Pattern::Str(s)))
     }
-
 }
 
 use nash_region::Located;

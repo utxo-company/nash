@@ -6,8 +6,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::Alias;
 
-use crate::error::TypeAlias;
 use crate::Parser;
+use crate::error::TypeAlias;
 
 impl<'a> Parser<'a> {
     /// Parse the body of a type alias declaration (after "type alias").

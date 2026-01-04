@@ -7,8 +7,8 @@ use nash_region::{Located, Position};
 use nash_source::{Comment, Value};
 
 use super::Decl;
-use crate::error::{self, DeclDef};
 use crate::Parser;
+use crate::error::{self, DeclDef};
 
 impl<'a> Parser<'a> {
     /// Parse a value definition.
@@ -60,10 +60,8 @@ impl<'a> Parser<'a> {
                         }),
                         // No type annotation: name args = body
                         Box::new(|p: &mut Parser<'a>| {
-                            let name_located = p.alloc(Located::at(
-                                nash_region::Region::new(start, end),
-                                name,
-                            ));
+                            let name_located =
+                                p.alloc(Located::at(nash_region::Region::new(start, end), name));
                             p.chomp_value_args_and_body(maybe_docs, start, name_located, None)
                         }),
                     ],

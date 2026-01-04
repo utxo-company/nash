@@ -11,8 +11,8 @@
 use nash_region::Region;
 use nash_source::{Exposed, Exposing, Privacy};
 
-use crate::error;
 use crate::Parser;
+use crate::error;
 
 impl<'a> Parser<'a> {
     /// Parse an exposing list.

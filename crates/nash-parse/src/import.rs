@@ -11,8 +11,8 @@
 use nash_region::Located;
 use nash_source::{Exposing, Import};
 
-use crate::error;
 use crate::Parser;
+use crate::error;
 
 impl<'a> Parser<'a> {
     /// Parse an import statement.
@@ -143,7 +143,10 @@ impl<'a> Parser<'a> {
     /// ```text
     /// module_name = upper_var { '.' upper_var }
     /// ```
-    pub(crate) fn module_name<E>(&mut self, to_error: impl FnOnce(u16, u16) -> E) -> Result<&'a str, E> {
+    pub(crate) fn module_name<E>(
+        &mut self,
+        to_error: impl FnOnce(u16, u16) -> E,
+    ) -> Result<&'a str, E> {
         let (row, col) = self.position();
         let start_pos = self.pos;
 

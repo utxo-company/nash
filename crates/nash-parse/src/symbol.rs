@@ -4,8 +4,8 @@
 
 use nash_region::{Located, Region};
 
-use crate::error::BadOperator;
 use crate::Parser;
+use crate::error::BadOperator;
 
 impl<'a> Parser<'a> {
     /// Parse an operator (binary op or symbolic identifier).

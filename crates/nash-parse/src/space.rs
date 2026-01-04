@@ -153,9 +153,11 @@ impl<'a> Parser<'a> {
                     Ok(comment)
                 }
                 SpaceStatus::HasTab => Err(to_space_error(Space::HasTab, self.row, self.col)),
-                SpaceStatus::EndlessMultiComment => {
-                    Err(to_space_error(Space::EndlessMultiComment, self.row, self.col))
-                }
+                SpaceStatus::EndlessMultiComment => Err(to_space_error(
+                    Space::EndlessMultiComment,
+                    self.row,
+                    self.col,
+                )),
             }
         } else {
             Err(to_expectation(self.row, self.col))

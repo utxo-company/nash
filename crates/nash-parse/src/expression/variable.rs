@@ -10,9 +10,9 @@
 use nash_region::{Located, Position};
 use nash_source::{Expr, VarType};
 
+use crate::Parser;
 use crate::error;
 use crate::keyword;
-use crate::Parser;
 
 impl<'a> Parser<'a> {
     // -------------------------------------------------------------------------

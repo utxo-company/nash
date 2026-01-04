@@ -11,8 +11,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::Pattern;
 
-use crate::error::{self, PList};
 use crate::Parser;
+use crate::error::{self, PList};
 
 impl<'a> Parser<'a> {
     /// Parse a list pattern: `[]`, `[p1, p2, ...]`
@@ -62,9 +62,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a pattern inside a list.
     /// Returns `(pattern, end)` where end is the position at end of pattern (before any chomp).
-    fn pattern_list_entry(
-        &mut self,
-    ) -> Result<(&'a Located<Pattern<'a>>, Position), PList<'a>> {
+    fn pattern_list_entry(&mut self) -> Result<(&'a Located<Pattern<'a>>, Position), PList<'a>> {
         self.specialize(
             |bump, pat_err, row, col| PList::Expr(bump.alloc(pat_err), row, col),
             |p| p.pattern_expr(),

@@ -6,8 +6,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::{Def, Expr};
 
-use crate::error::{self, Def as DefErr, Destruct, Let};
 use crate::Parser;
+use crate::error::{self, Def as DefErr, Destruct, Let};
 
 impl<'a> Parser<'a> {
     /// Parse a let expression.
@@ -62,7 +62,10 @@ impl<'a> Parser<'a> {
 
                 // Build the let expression
                 let defs_slice = p.alloc_slice_copy(&defs);
-                let let_expr = Expr::Let { defs: defs_slice, body };
+                let let_expr = Expr::Let {
+                    defs: defs_slice,
+                    body,
+                };
 
                 Ok((p.add_end(start, let_expr), end))
             },
@@ -258,7 +261,10 @@ impl<'a> Parser<'a> {
                     |p| p.expression(),
                 )?;
 
-                let def = Def::Destruct { pattern, body: expr };
+                let def = Def::Destruct {
+                    pattern,
+                    body: expr,
+                };
                 Ok((p.add_end(start, def), end))
             },
         )
@@ -282,59 +288,70 @@ mod tests {
 
     #[test]
     fn let_multiline() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             let
                 x = 1
             in
                 x
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn let_multiple_defs() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             let
                 x = 1
                 y = 2
             in
                 x
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn let_with_function() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             let
                 f x = x
             in
                 f 1
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn let_with_type_annotation() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             let
                 f : Int -> Int
                 f x = x
             in
                 f 1
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn let_destructure() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             let
                 (a, b) = pair
             in
                 a
-        "#);
+        "#
+        );
     }
 
     #[test]
     fn let_nested() {
-        assert_expression_snapshot!(r#"
+        assert_expression_snapshot!(
+            r#"
             let
                 x =
                     let
@@ -343,6 +360,7 @@ mod tests {
                         y
             in
                 x
-        "#);
+        "#
+        );
     }
 }

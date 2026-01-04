@@ -8,8 +8,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position};
 use nash_source::Pattern;
 
-use crate::error::{self, PTuple};
 use crate::Parser;
+use crate::error::{self, PTuple};
 
 impl<'a> Parser<'a> {
     /// Parse a tuple pattern: `()`, `(p)`, `(p1, p2, ...)`
@@ -51,9 +51,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a pattern inside a tuple.
     /// Returns `(pattern, end)` where end is the position at end of pattern (before any chomp).
-    fn pattern_tuple_entry(
-        &mut self,
-    ) -> Result<(&'a Located<Pattern<'a>>, Position), PTuple<'a>> {
+    fn pattern_tuple_entry(&mut self) -> Result<(&'a Located<Pattern<'a>>, Position), PTuple<'a>> {
         self.specialize(
             |bump, pat_err, row, col| PTuple::Expr(bump.alloc(pat_err), row, col),
             |p| p.pattern_expr(),
@@ -105,11 +103,14 @@ impl<'a> Parser<'a> {
             // Tuple
             let second = rest.remove(0);
             let others = rest.into_bump_slice();
-            Ok(self.add_end(start, Pattern::Tuple {
-                first,
-                second,
-                rest: others,
-            }))
+            Ok(self.add_end(
+                start,
+                Pattern::Tuple {
+                    first,
+                    second,
+                    rest: others,
+                },
+            ))
         }
     }
 }

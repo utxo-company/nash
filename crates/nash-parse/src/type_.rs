@@ -10,8 +10,8 @@ use bumpalo::collections::Vec as BumpVec;
 use nash_region::{Located, Position, Region};
 use nash_source::{FieldType, Type};
 
-use crate::error::{self, TRecord, TTuple};
 use crate::Parser;
+use crate::error::{self, TRecord, TTuple};
 
 /// Qualified or unqualified uppercase name (for types).
 enum ForeignUpper<'a> {
@@ -36,9 +36,7 @@ impl<'a> Parser<'a> {
     ///       term1@(tipe1, end1) <- oneOf E.TStart [ app start, term... ]
     ///       oneOfWithFallback [ arrow... ] term1
     /// ```
-    pub fn type_expr(
-        &mut self,
-    ) -> Result<(&'a Located<Type<'a>>, Position), error::Type<'a>> {
+    pub fn type_expr(&mut self) -> Result<(&'a Located<Type<'a>>, Position), error::Type<'a>> {
         let start = self.get_position();
 
         // Parse first term - either type application or simple term
@@ -97,11 +95,7 @@ impl<'a> Parser<'a> {
 
         let region = Region::new(start, upper_end);
         let tipe = match upper {
-            ForeignUpper::Unqualified(name) => Type::Type {
-                region,
-                name,
-                args,
-            },
+            ForeignUpper::Unqualified(name) => Type::Type { region, name, args },
             ForeignUpper::Qualified(module, name) => Type::TypeQual {
                 region,
                 module,
@@ -211,10 +205,7 @@ impl<'a> Parser<'a> {
     // -------------------------------------------------------------------------
 
     /// Parse a tuple type: `()`, `(a)`, `(a, b)`, `(a, b, c)`
-    fn type_tuple(
-        &mut self,
-        start: Position,
-    ) -> Result<&'a Located<Type<'a>>, error::Type<'a>> {
+    fn type_tuple(&mut self, start: Position) -> Result<&'a Located<Type<'a>>, error::Type<'a>> {
         self.in_context(
             |bump, tuple_err, row, col| error::Type::Tuple(bump.alloc(tuple_err), row, col),
             |p| p.word1(0x28, error::Type::Start), // (
@@ -223,10 +214,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse tuple type body after `(`.
-    fn type_tuple_body(
-        &mut self,
-        start: Position,
-    ) -> Result<&'a Located<Type<'a>>, TTuple<'a>> {
+    fn type_tuple_body(&mut self, start: Position) -> Result<&'a Located<Type<'a>>, TTuple<'a>> {
         self.chomp_and_check_indent(TTuple::Space, TTuple::IndentType1)?;
 
         self.one_of(
@@ -248,9 +236,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a type inside a tuple.
-    fn type_tuple_entry(
-        &mut self,
-    ) -> Result<(&'a Located<Type<'a>>, Position), TTuple<'a>> {
+    fn type_tuple_entry(&mut self) -> Result<(&'a Located<Type<'a>>, Position), TTuple<'a>> {
         self.specialize(
             |bump, type_err, row, col| TTuple::Type(bump.alloc(type_err), row, col),
             |p| p.type_expr(),
@@ -302,11 +288,14 @@ impl<'a> Parser<'a> {
             // Tuple
             let second = rest.remove(0);
             let others = rest.into_bump_slice();
-            Ok(self.add_end(start, Type::Tuple {
-                first,
-                second,
-                rest: others,
-            }))
+            Ok(self.add_end(
+                start,
+                Type::Tuple {
+                    first,
+                    second,
+                    rest: others,
+                },
+            ))
         }
     }
 
@@ -315,10 +304,7 @@ impl<'a> Parser<'a> {
     // -------------------------------------------------------------------------
 
     /// Parse a record type: `{}`, `{ name : String }`, `{ a | name : String }`
-    fn type_record(
-        &mut self,
-        start: Position,
-    ) -> Result<&'a Located<Type<'a>>, error::Type<'a>> {
+    fn type_record(&mut self, start: Position) -> Result<&'a Located<Type<'a>>, error::Type<'a>> {
         self.in_context(
             |bump, record_err, row, col| error::Type::Record(bump.alloc(record_err), row, col),
             |p| p.word1(0x7B, error::Type::Start), // {
@@ -327,10 +313,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse record type body after `{`.
-    fn type_record_body(
-        &mut self,
-        start: Position,
-    ) -> Result<&'a Located<Type<'a>>, TRecord<'a>> {
+    fn type_record_body(&mut self, start: Position) -> Result<&'a Located<Type<'a>>, TRecord<'a>> {
         self.chomp_and_check_indent(TRecord::Space, TRecord::IndentOpen)?;
 
         self.one_of(
@@ -340,10 +323,13 @@ impl<'a> Parser<'a> {
                 Box::new(|p: &mut Parser<'a>| {
                     p.word1(0x7D, TRecord::Open)?; // }
                     let empty: &'a [&'a FieldType<'a>] = &[];
-                    Ok(p.add_end(start, Type::Record {
-                        fields: empty,
-                        ext: None,
-                    }))
+                    Ok(p.add_end(
+                        start,
+                        Type::Record {
+                            fields: empty,
+                            ext: None,
+                        },
+                    ))
                 }),
                 // Non-empty record
                 Box::new(|p: &mut Parser<'a>| {
@@ -363,10 +349,13 @@ impl<'a> Parser<'a> {
 
                                 let field = p.type_record_field()?;
                                 let fields = p.type_record_end(field)?;
-                                Ok(p.add_end(start, Type::Record {
-                                    fields,
-                                    ext: Some(name_loc),
-                                }))
+                                Ok(p.add_end(
+                                    start,
+                                    Type::Record {
+                                        fields,
+                                        ext: Some(name_loc),
+                                    },
+                                ))
                             }),
                             // Regular field: `{ name : Type }`
                             Box::new(|p: &mut Parser<'a>| {
@@ -381,10 +370,7 @@ impl<'a> Parser<'a> {
                                     typ: tipe,
                                 });
                                 let fields = p.type_record_end(field)?;
-                                Ok(p.add_end(start, Type::Record {
-                                    fields,
-                                    ext: None,
-                                }))
+                                Ok(p.add_end(start, Type::Record { fields, ext: None }))
                             }),
                         ],
                     )
@@ -394,9 +380,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a type inside a record field.
-    fn type_record_type_entry(
-        &mut self,
-    ) -> Result<(&'a Located<Type<'a>>, Position), TRecord<'a>> {
+    fn type_record_type_entry(&mut self) -> Result<(&'a Located<Type<'a>>, Position), TRecord<'a>> {
         self.specialize(
             |bump, type_err, row, col| TRecord::Type(bump.alloc(type_err), row, col),
             |p| p.type_expr(),

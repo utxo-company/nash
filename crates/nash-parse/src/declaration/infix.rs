@@ -7,8 +7,8 @@
 use nash_region::Located;
 use nash_source::{Associativity, Infix, Precedence};
 
-use crate::error::Module as ModuleErr;
 use crate::Parser;
+use crate::error::Module as ModuleErr;
 
 impl<'a> Parser<'a> {
     /// Parse an infix declaration.

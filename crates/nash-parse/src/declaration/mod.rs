@@ -11,8 +11,8 @@ mod value;
 use nash_region::{Located, Position};
 use nash_source::{Alias, Comment, Union, Value};
 
-use crate::error::{self, Decl as DeclErr};
 use crate::Parser;
+use crate::error::{self, Decl as DeclErr};
 
 /// A parsed declaration with optional doc comment.
 #[derive(Debug)]
@@ -69,10 +69,9 @@ impl<'a> Parser<'a> {
     fn chomp_doc_comment(&mut self) -> Result<Option<&'a Comment<'a>>, error::Decl<'a>> {
         self.one_of_with_fallback(
             vec![Box::new(|p: &mut Parser<'a>| {
-                let doc = p.doc_comment(
-                    DeclErr::Start,
-                    |space, row, col| DeclErr::Space(space, row, col),
-                )?;
+                let doc = p.doc_comment(DeclErr::Start, |space, row, col| {
+                    DeclErr::Space(space, row, col)
+                })?;
                 p.chomp(|space, row, col| DeclErr::Space(space, row, col))?;
                 p.check_fresh_line(DeclErr::FreshLineAfterDocComment)?;
                 Ok(Some(doc))
