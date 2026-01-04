@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Module header (uses exposing list for exports)
+**Next task:** Full module parsing
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -35,6 +35,7 @@ Current working files:
 - `crates/nash-parse/src/declaration/infix.rs` - `infix left 6 (|>) = apR`
 - `crates/nash-parse/src/exposing.rs` - `(..)`, `(foo, Bar(..), (+))`
 - `crates/nash-parse/src/import.rs` - `import Foo as F exposing (bar)`
+- `crates/nash-parse/src/module.rs` - `module Foo.Bar exposing (baz)`
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -132,7 +133,7 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Infix declarations (`declaration/infix.rs`)
 
 ### Module Structure
-- [ ] Module header
+- [x] Module header (`module.rs`)
 - [x] Exposing list (`exposing.rs`)
 - [x] Imports (`import.rs`)
 - [ ] Full module parsing
@@ -267,6 +268,7 @@ associativity  = 'left' | 'right' | 'non' ;
 ### Module
 
 ```ebnf
+module_header  = 'module' module_name 'exposing' exposing_list ;
 import         = 'import' module_name [ 'as' upper_var ] [ 'exposing' exposing_list ] ;
 module_name    = upper_var { '.' upper_var } ;
 

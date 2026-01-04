@@ -7,6 +7,7 @@ mod exposing;
 mod expression;
 mod import;
 mod keyword;
+mod module;
 mod number;
 mod pattern;
 mod space;
