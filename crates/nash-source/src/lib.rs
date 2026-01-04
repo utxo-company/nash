@@ -11,6 +11,7 @@ pub struct Module<'a> {
     pub binops: &'a [&'a Located<Infix<'a>>],
 }
 
+#[derive(Debug)]
 pub struct Import<'a> {
     pub import: &'a Located<&'a str>,
     pub alias: Option<&'a str>,

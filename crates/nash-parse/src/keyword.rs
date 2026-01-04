@@ -110,6 +110,27 @@ impl<'a> Parser<'a> {
         self.keyword(b"non", to_error)
     }
 
+    /// Parse the `import` keyword.
+    ///
+    /// Mirrors Elm's `Keyword.import_`.
+    pub fn keyword_import<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"import", to_error)
+    }
+
+    /// Parse the `as` keyword.
+    ///
+    /// Mirrors Elm's `Keyword.as_`.
+    pub fn keyword_as<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"as", to_error)
+    }
+
+    /// Parse the `exposing` keyword.
+    ///
+    /// Mirrors Elm's `Keyword.exposing_`.
+    pub fn keyword_exposing<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"exposing", to_error)
+    }
+
     /// Generic keyword parser that checks bytes match and no identifier continuation follows.
     ///
     /// Mirrors Elm's `k2`, `k3`, `k4` etc. but generalized.

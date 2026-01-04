@@ -5,6 +5,7 @@ pub mod error;
 mod declaration;
 mod exposing;
 mod expression;
+mod import;
 mod keyword;
 mod number;
 mod pattern;

@@ -1,6 +1,6 @@
 ---
 source: crates/nash-parse/src/exposing.rs
-description: "((+), (-), (++))"
+description: "Code:\n\n((+), (-), (++))"
 ---
 Explicit(
     [

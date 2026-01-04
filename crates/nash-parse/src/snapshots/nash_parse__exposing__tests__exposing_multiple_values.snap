@@ -1,6 +1,6 @@
 ---
 source: crates/nash-parse/src/exposing.rs
-description: "(foo, bar, baz)"
+description: "Code:\n\n(foo, bar, baz)"
 ---
 Explicit(
     [

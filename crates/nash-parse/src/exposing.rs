@@ -197,7 +197,7 @@ mod tests {
             match result {
                 Ok(ref exposing) => {
                     insta::with_settings!({
-                        description => input,
+                        description => format!("Code:\n\n{}", input),
                         omit_expression => true,
                     }, {
                         insta::assert_debug_snapshot!(exposing);
