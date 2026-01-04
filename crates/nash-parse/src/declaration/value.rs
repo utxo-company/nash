@@ -190,4 +190,28 @@ mod tests {
         "#
         );
     }
+
+    #[test]
+    fn value_with_doc_comment() {
+        assert_decl_snapshot!(
+            r#"
+            {-| A simple greeting function -}
+            greet name = name
+        "#
+        );
+    }
+
+    #[test]
+    fn value_with_doc_comment_multiline() {
+        assert_decl_snapshot!(
+            r#"
+            {-| Adds two numbers together.
+
+            This is a longer description.
+            -}
+            add : Int -> Int -> Int
+            add x y = x
+        "#
+        );
+    }
 }

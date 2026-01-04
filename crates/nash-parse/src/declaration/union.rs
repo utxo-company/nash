@@ -215,4 +215,14 @@ mod tests {
         "#
         );
     }
+
+    #[test]
+    fn union_with_doc_comment() {
+        assert_decl_snapshot!(
+            r#"
+            {-| Represents optional values -}
+            type Maybe a = Just a | Nothing
+        "#
+        );
+    }
 }

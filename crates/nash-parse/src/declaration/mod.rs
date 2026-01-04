@@ -38,8 +38,7 @@ impl<'a> Parser<'a> {
     ///         ]
     /// ```
     pub fn declaration(&mut self) -> Result<(Decl<'a>, Position), error::Decl<'a>> {
-        // TODO: Parse optional doc comment
-        let maybe_docs: Option<&'a Comment<'a>> = None;
+        let maybe_docs = self.chomp_doc_comment()?;
 
         let start = self.get_position();
 
@@ -51,6 +50,34 @@ impl<'a> Parser<'a> {
                 // value definition
                 Box::new(|p| p.value_decl(maybe_docs, start)),
             ],
+        )
+    }
+
+    /// Parse an optional doc comment `{-| ... -}`.
+    ///
+    /// Mirrors Elm's `chompDocComment`:
+    /// ```haskell
+    /// chompDocComment =
+    ///   oneOfWithFallback
+    ///     [ do  docComment <- Space.docComment E.DeclStart E.DeclSpace
+    ///           Space.chomp E.DeclSpace
+    ///           Space.checkFreshLine E.DeclFreshLineAfterDocComment
+    ///           return (Just docComment)
+    ///     ]
+    ///     Nothing
+    /// ```
+    fn chomp_doc_comment(&mut self) -> Result<Option<&'a Comment<'a>>, error::Decl<'a>> {
+        self.one_of_with_fallback(
+            vec![Box::new(|p: &mut Parser<'a>| {
+                let doc = p.doc_comment(
+                    DeclErr::Start,
+                    |space, row, col| DeclErr::Space(space, row, col),
+                )?;
+                p.chomp(|space, row, col| DeclErr::Space(space, row, col))?;
+                p.check_fresh_line(DeclErr::FreshLineAfterDocComment)?;
+                Ok(Some(doc))
+            })],
+            None,
         )
     }
 

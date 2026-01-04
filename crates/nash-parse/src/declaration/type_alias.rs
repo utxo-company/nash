@@ -116,4 +116,14 @@ mod tests {
     fn type_alias_record() {
         assert_decl_snapshot!("type alias Model = { count : Int }");
     }
+
+    #[test]
+    fn type_alias_with_doc_comment() {
+        assert_decl_snapshot!(
+            r#"
+            {-| The application model -}
+            type alias Model = { count : Int }
+        "#
+        );
+    }
 }

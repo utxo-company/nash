@@ -6,11 +6,13 @@
 //! - Spaces and newlines
 //! - Line comments (`--`)
 //! - Multi-line comments (`{- ... -}`) with nesting
+//! - Doc comments (`{-| ... -}`)
 //! - Indentation checking
 //! - Tab detection (tabs are not allowed)
 
 use crate::error::Space;
 use crate::{Col, Parser, Row};
+use nash_source::{Comment, Snippet};
 
 /// Result of eating spaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +107,58 @@ impl<'a> Parser<'a> {
             Ok(())
         } else {
             Err(to_error(self.row, self.col))
+        }
+    }
+
+    /// Parse a doc comment `{-| ... -}`.
+    ///
+    /// Returns the Comment containing a Snippet of the content.
+    /// Mirrors Elm's `Space.docComment`.
+    pub fn doc_comment<E>(
+        &mut self,
+        to_expectation: impl FnOnce(Row, Col) -> E,
+        to_space_error: impl FnOnce(Space, Row, Col) -> E,
+    ) -> Result<&'a Comment<'a>, E> {
+        // Check for {-| at current position
+        if self.peek() == Some(0x7B)
+            && self.peek_at(1) == Some(0x2D)
+            && self.peek_at(2) == Some(0x7C)
+        {
+            let start_row = self.row;
+            let start_col = self.col + 3; // Column after {-|
+
+            // Skip {-|
+            self.advance();
+            self.advance();
+            self.advance();
+
+            let content_start = self.pos;
+
+            // Use the existing multi-comment helper with nesting=1
+            let status = self.eat_multi_comment_help(1);
+
+            match status {
+                SpaceStatus::Good => {
+                    // Content ends 2 bytes before current position (before -})
+                    let content_end = self.pos - 2;
+                    let content = &self.src[content_start..content_end];
+
+                    let snippet = self.alloc(Snippet {
+                        data: content,
+                        off_row: start_row,
+                        off_col: start_col,
+                    });
+                    let comment = self.alloc(Comment(snippet));
+
+                    Ok(comment)
+                }
+                SpaceStatus::HasTab => Err(to_space_error(Space::HasTab, self.row, self.col)),
+                SpaceStatus::EndlessMultiComment => {
+                    Err(to_space_error(Space::EndlessMultiComment, self.row, self.col))
+                }
+            }
+        } else {
+            Err(to_expectation(self.row, self.col))
         }
     }
 
@@ -344,5 +398,43 @@ mod tests {
         let (status, pos, _, _) = parse_and_chomp("  foo");
         assert_eq!(status, SpaceStatus::Good);
         assert_eq!(pos, 2); // Stopped at 'f'
+    }
+
+    #[test]
+    fn doc_comment_simple() {
+        let bump = Bump::new();
+        let src = bump.alloc_str("{-| hello -}");
+        let mut parser = Parser::new(&bump, src.as_bytes());
+
+        let result = parser.doc_comment(|_, _| "expected", |_, _, _| "space error");
+        assert!(result.is_ok());
+        let comment = result.unwrap();
+        // Content is " hello " (between {-| and -})
+        assert_eq!(comment.0.data, b" hello ");
+        assert_eq!(comment.0.off_row, 1);
+        assert_eq!(comment.0.off_col, 4); // Column after {-|
+    }
+
+    #[test]
+    fn doc_comment_multiline() {
+        let bump = Bump::new();
+        let src = bump.alloc_str("{-| line one\nline two -}");
+        let mut parser = Parser::new(&bump, src.as_bytes());
+
+        let result = parser.doc_comment(|_, _| "expected", |_, _, _| "space error");
+        assert!(result.is_ok());
+        let comment = result.unwrap();
+        assert_eq!(comment.0.data, b" line one\nline two ");
+    }
+
+    #[test]
+    fn doc_comment_not_doc() {
+        let bump = Bump::new();
+        let src = bump.alloc_str("{- not a doc comment -}");
+        let mut parser = Parser::new(&bump, src.as_bytes());
+
+        let result = parser.doc_comment(|_, _| "expected", |_, _, _| "space error");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "expected");
     }
 }
