@@ -1,5 +1,6 @@
 use nash_region::{Located, Region};
 
+#[derive(Debug)]
 pub struct Module<'a> {
     pub name: Option<&'a Located<&'a str>>,
     pub exports: &'a Located<Exposing<'a>>,

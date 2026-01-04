@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Full module parsing
+**Next task:** Parser complete! Next phase: canonicalization or type checking
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -35,7 +35,7 @@ Current working files:
 - `crates/nash-parse/src/declaration/infix.rs` - `infix left 6 (|>) = apR`
 - `crates/nash-parse/src/exposing.rs` - `(..)`, `(foo, Bar(..), (+))`
 - `crates/nash-parse/src/import.rs` - `import Foo as F exposing (bar)`
-- `crates/nash-parse/src/module.rs` - `module Foo.Bar exposing (baz)`
+- `crates/nash-parse/src/module.rs` - full module parsing (header, imports, declarations)
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -136,7 +136,7 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Module header (`module.rs`)
 - [x] Exposing list (`exposing.rs`)
 - [x] Imports (`import.rs`)
-- [ ] Full module parsing
+- [x] Full module parsing (`module.rs`)
 
 ---
 
@@ -268,6 +268,7 @@ associativity  = 'left' | 'right' | 'non' ;
 ### Module
 
 ```ebnf
+module         = [ module_header ] { import } { infix_decl } { declaration } ;
 module_header  = 'module' module_name 'exposing' exposing_list ;
 import         = 'import' module_name [ 'as' upper_var ] [ 'exposing' exposing_list ] ;
 module_name    = upper_var { '.' upper_var } ;
