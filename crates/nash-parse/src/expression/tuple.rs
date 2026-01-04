@@ -60,9 +60,8 @@ impl<'a> Parser<'a> {
                 vec![
                     // Expression (might be parenthesized or start of tuple)
                     Box::new(|p: &mut Parser<'a>| {
-                        let first = p.tuple_expr()?;
-                        let (end_row, end_col) = p.position();
-                        p.check_indent(end_row, end_col, Tuple::IndentEnd)?;
+                        let (first, end) = p.tuple_expr()?;
+                        p.check_indent(end.line, end.column, Tuple::IndentEnd)?;
                         p.chomp_tuple_end(start, first)
                     }),
                 ],
@@ -128,9 +127,8 @@ impl<'a> Parser<'a> {
                     }),
                     // Expression (might be parenthesized or start of tuple)
                     Box::new(|p: &mut Parser<'a>| {
-                        let first = p.tuple_expr()?;
-                        let (end_row, end_col) = p.position();
-                        p.check_indent(end_row, end_col, Tuple::IndentEnd)?;
+                        let (first, end) = p.tuple_expr()?;
+                        p.check_indent(end.line, end.column, Tuple::IndentEnd)?;
                         p.chomp_tuple_end(start, first)
                     }),
                 ],
@@ -141,13 +139,11 @@ impl<'a> Parser<'a> {
     /// Parse a tuple entry expression.
     ///
     /// In Elm this uses `specialize E.TupleExpr expression`.
-    fn tuple_expr(&mut self) -> Result<&'a Located<Expr<'a>>, Tuple<'a>> {
+    /// Returns both the expression and its end position for indent checking.
+    fn tuple_expr(&mut self) -> Result<(&'a Located<Expr<'a>>, Position), Tuple<'a>> {
         self.specialize(
             |bump, expr_err, row, col| Tuple::Expr(bump.alloc(expr_err), row, col),
-            |p| {
-                let (expr, _end) = p.expression()?;
-                Ok(expr)
-            },
+            |p| p.expression(),
         )
     }
 
@@ -190,12 +186,11 @@ impl<'a> Parser<'a> {
                         p.chomp_and_check_indent(Tuple::Space, Tuple::IndentExprN)?;
 
                         // Parse the expression
-                        let elem = p.tuple_expr()?;
+                        let (elem, end) = p.tuple_expr()?;
                         rest.push(elem);
 
-                        // Check indent after expression
-                        let (end_row, end_col) = p.position();
-                        p.check_indent(end_row, end_col, Tuple::IndentEnd)?;
+                        // Check indent using expression's end position
+                        p.check_indent(end.line, end.column, Tuple::IndentEnd)?;
 
                         Ok(false) // Not done, continue loop
                     }),

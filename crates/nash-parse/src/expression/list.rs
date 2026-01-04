@@ -52,11 +52,10 @@ impl<'a> Parser<'a> {
             vec![
                 // Try to parse first element
                 Box::new(|p: &mut Parser<'a>| {
-                    let first = p.list_expr()?;
-                    let (end_row, end_col) = p.position();
+                    let (first, end) = p.list_expr()?;
 
-                    // Check indent after expression
-                    p.check_indent(end_row, end_col, List::IndentEnd)?;
+                    // Check indent using expression's end position (not current parser position)
+                    p.check_indent(end.line, end.column, List::IndentEnd)?;
 
                     // Parse remaining elements
                     let mut elements = BumpVec::new_in(p.bump);
@@ -79,13 +78,11 @@ impl<'a> Parser<'a> {
     /// Parse a list entry expression.
     ///
     /// Mirrors Elm's `specialize E.ListExpr expression`.
-    fn list_expr(&mut self) -> Result<&'a Located<Expr<'a>>, List<'a>> {
+    /// Returns both the expression and its end position for indent checking.
+    fn list_expr(&mut self) -> Result<(&'a Located<Expr<'a>>, Position), List<'a>> {
         self.specialize(
             |bump, expr_err, row, col| List::Expr(bump.alloc(expr_err), row, col),
-            |p| {
-                let (expr, _end) = p.expression()?;
-                Ok(expr)
-            },
+            |p| p.expression(),
         )
     }
 
@@ -124,12 +121,11 @@ impl<'a> Parser<'a> {
                         p.chomp_and_check_indent(List::Space, List::IndentExpr)?;
 
                         // Parse the expression
-                        let elem = p.list_expr()?;
+                        let (elem, end) = p.list_expr()?;
                         elements.push(elem);
 
-                        // Check indent after expression
-                        let (end_row, end_col) = p.position();
-                        p.check_indent(end_row, end_col, List::IndentEnd)?;
+                        // Check indent using expression's end position
+                        p.check_indent(end.line, end.column, List::IndentEnd)?;
 
                         Ok(false) // Not done, continue loop
                     }),

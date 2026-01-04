@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Declarations (Value definitions)
+**Next task:** Module Structure (Module header, imports, exposing)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -28,6 +28,11 @@ Current working files:
 - `crates/nash-parse/src/pattern/tuple.rs` - `()`, `(a, b)`
 - `crates/nash-parse/src/pattern/list.rs` - `[]`, `[a, b, c]`
 - `crates/nash-parse/src/type_.rs` - `type_term`, `type_expr` (variables, named, function, tuple, record)
+- `crates/nash-parse/src/declaration/mod.rs` - `declaration`, `Decl` enum, orchestration
+- `crates/nash-parse/src/declaration/value.rs` - value definitions with type annotations
+- `crates/nash-parse/src/declaration/type_alias.rs` - `type alias Name a = Type`
+- `crates/nash-parse/src/declaration/union.rs` - `type Name a = Ctor1 | Ctor2`
+- `crates/nash-parse/src/declaration/infix.rs` - `infix left 6 (|>) = apR`
 - `crates/nash-parse/src/error.rs` - Error hierarchy
 
 ## File Mappings
@@ -118,11 +123,11 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Operator sections (`expression/tuple.rs`)
 
 ### Declarations
-- [ ] Value definitions
-- [ ] Type annotations
-- [ ] Type aliases
-- [ ] Custom types (unions)
-- [ ] Infix declarations
+- [x] Value definitions (`declaration/value.rs`)
+- [x] Type annotations (`declaration/value.rs`)
+- [x] Type aliases (`declaration/type_alias.rs`)
+- [x] Custom types (unions) (`declaration/union.rs`)
+- [x] Infix declarations (`declaration/infix.rs`)
 
 ### Module Structure
 - [ ] Module header
@@ -240,7 +245,21 @@ type_field     = lower_var ':' type_expr ;
 ### Declarations
 
 ```ebnf
-(* To be filled in as implemented *)
+declaration    = [ doc_comment ] ( type_decl | value_decl ) ;
+
+value_decl     = lower_var [ ':' type_expr ] { pattern_term } '=' expression ;
+
+type_decl      = 'type' ( alias_decl | union_decl ) ;
+
+alias_decl     = 'alias' upper_var { lower_var } '=' type_expr ;
+
+union_decl     = upper_var { lower_var } '=' variant { '|' variant } ;
+
+variant        = upper_var { type_term } ;
+
+infix_decl     = 'infix' associativity digit '(' operator ')' '=' lower_var ;
+
+associativity  = 'left' | 'right' | 'non' ;
 ```
 
 ### Module

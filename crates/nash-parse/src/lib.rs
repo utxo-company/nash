@@ -2,6 +2,7 @@ use bumpalo::Bump;
 use nash_region::{Located, Position, Region};
 
 pub mod error;
+mod declaration;
 mod expression;
 mod keyword;
 mod number;
@@ -54,7 +55,7 @@ impl<'a> Parser<'a> {
             bump,
             src,
             pos: 0,
-            indent: 0,
+            indent: 1, // Start at 1 like Elm - top-level declarations are at column 1
             row: 1,
             col: 1,
         }
