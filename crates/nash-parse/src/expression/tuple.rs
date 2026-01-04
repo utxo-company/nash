@@ -40,32 +40,102 @@ impl<'a> Parser<'a> {
     /// Parse the body of a tuple after the opening '('.
     ///
     /// Returns `Tuple` errors which get wrapped by `in_context`.
+    ///
+    /// Handles:
+    /// - `()` → Unit
+    /// - `(expr)` → parenthesized expression
+    /// - `(a, b, ...)` → Tuple
+    /// - `(+)` → Operator section (Op)
+    /// - `(-expr)` → Parenthesized negation (parsed as expression)
     fn tuple_body(&mut self, start: Position) -> Result<&'a Located<Expr<'a>>, Tuple<'a>> {
+        let before = self.get_position();
         // Chomp whitespace and check indent
         self.chomp_and_check_indent(Tuple::Space, Tuple::IndentExpr1)?;
+        let after = self.get_position();
 
-        // Check what comes next
-        self.one_of(
-            Tuple::IndentExpr1,
-            vec![
-                // Unit: just ')'
-                Box::new(|p: &mut Parser<'a>| {
-                    p.word1(0x29, Tuple::IndentExpr1)?;
-                    Ok(p.add_end(start, Expr::Unit))
-                }),
-                // Expression (might be parenthesized or start of tuple)
-                Box::new(|p: &mut Parser<'a>| {
-                    let first = p.tuple_expr()?;
-                    let (end_row, end_col) = p.position();
+        // If whitespace was consumed, parse expression normally
+        if before != after {
+            self.one_of(
+                Tuple::IndentExpr1,
+                vec![
+                    // Expression (might be parenthesized or start of tuple)
+                    Box::new(|p: &mut Parser<'a>| {
+                        let first = p.tuple_expr()?;
+                        let (end_row, end_col) = p.position();
+                        p.check_indent(end_row, end_col, Tuple::IndentEnd)?;
+                        p.chomp_tuple_end(start, first)
+                    }),
+                ],
+            )
+        } else {
+            // No whitespace - check for operator section or unit
+            self.one_of(
+                Tuple::IndentExpr1,
+                vec![
+                    // Operator section: `(+)`, `(++)`, etc.
+                    // Note: `-` followed by `)` is `(-)`, otherwise it's negation
+                    Box::new(|p: &mut Parser<'a>| {
+                        let op = p.operator(Tuple::IndentExpr1, Tuple::OperatorReserved)?;
 
-                    // Check indent after expression
-                    p.check_indent(end_row, end_col, Tuple::IndentEnd)?;
+                        if op == "-" {
+                            // Special case: `-` could be negation or minus operator
+                            p.one_of(
+                                Tuple::OperatorClose,
+                                vec![
+                                    // Just `(-)` - minus operator section
+                                    Box::new(|p: &mut Parser<'a>| {
+                                        p.word1(0x29, Tuple::OperatorClose)?;
+                                        Ok(p.add_end(start, Expr::Op(op)))
+                                    }),
+                                    // `(-expr)` or `(-expr, ...)` - negation followed by more
+                                    Box::new(|p: &mut Parser<'a>| {
+                                        // Parse the negation as part of the expression
+                                        let neg_start = Position::new(start.line, start.column + 1);
+                                        let inner = p.specialize(
+                                            |bump, e, row, col| Tuple::Expr(bump.alloc(e), row, col),
+                                            |p| p.term(),
+                                        )?;
+                                        let neg_end = p.get_position();
+                                        let neg_region = nash_region::Region::new(neg_start, neg_end);
+                                        let negated = p.alloc(nash_region::Located::at(
+                                            neg_region,
+                                            Expr::Negate(inner),
+                                        ));
 
-                    // Parse rest - either ')' for parenthesized or ',' for tuple
-                    p.chomp_tuple_end(start, first)
-                }),
-            ],
-        )
+                                        // Now handle rest of expression (function application, operators)
+                                        p.chomp(Tuple::Space)?;
+
+                                        let (full_expr, expr_end) = p.specialize(
+                                            |bump, e, row, col| Tuple::Expr(bump.alloc(e), row, col),
+                                            |p| p.chomp_expr_end(start, negated, vec![], neg_end),
+                                        )?;
+
+                                        p.check_indent(expr_end.line, expr_end.column, Tuple::IndentEnd)?;
+                                        p.chomp_tuple_end(start, full_expr)
+                                    }),
+                                ],
+                            )
+                        } else {
+                            // Regular operator section
+                            p.word1(0x29, Tuple::OperatorClose)?;
+                            Ok(p.add_end(start, Expr::Op(op)))
+                        }
+                    }),
+                    // Unit: just ')'
+                    Box::new(|p: &mut Parser<'a>| {
+                        p.word1(0x29, Tuple::IndentExpr1)?;
+                        Ok(p.add_end(start, Expr::Unit))
+                    }),
+                    // Expression (might be parenthesized or start of tuple)
+                    Box::new(|p: &mut Parser<'a>| {
+                        let first = p.tuple_expr()?;
+                        let (end_row, end_col) = p.position();
+                        p.check_indent(end_row, end_col, Tuple::IndentEnd)?;
+                        p.chomp_tuple_end(start, first)
+                    }),
+                ],
+            )
+        }
     }
 
     /// Parse a tuple entry expression.

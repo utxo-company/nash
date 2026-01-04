@@ -68,6 +68,48 @@ impl<'a> Parser<'a> {
         self.keyword(b"in", to_error)
     }
 
+    /// Parse the `type` keyword.
+    ///
+    /// Mirrors Elm's `Keyword.type_`.
+    pub fn keyword_type<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"type", to_error)
+    }
+
+    /// Parse the `alias` keyword.
+    ///
+    /// Mirrors Elm's `Keyword.alias_`.
+    pub fn keyword_alias<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"alias", to_error)
+    }
+
+    /// Parse the `infix` keyword.
+    ///
+    /// Mirrors Elm's `Keyword.infix_`.
+    pub fn keyword_infix<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"infix", to_error)
+    }
+
+    /// Parse the `left` keyword (for infix associativity).
+    ///
+    /// Mirrors Elm's `Keyword.left_`.
+    pub fn keyword_left<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"left", to_error)
+    }
+
+    /// Parse the `right` keyword (for infix associativity).
+    ///
+    /// Mirrors Elm's `Keyword.right_`.
+    pub fn keyword_right<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"right", to_error)
+    }
+
+    /// Parse the `non` keyword (for infix associativity).
+    ///
+    /// Mirrors Elm's `Keyword.non_`.
+    pub fn keyword_non<E>(&mut self, to_error: impl FnOnce(Row, Col) -> E) -> Result<(), E> {
+        self.keyword(b"non", to_error)
+    }
+
     /// Generic keyword parser that checks bytes match and no identifier continuation follows.
     ///
     /// Mirrors Elm's `k2`, `k3`, `k4` etc. but generalized.

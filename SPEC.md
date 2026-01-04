@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Next task:** Expressions (Binary operators)
+**Next task:** Declarations (Value definitions)
 
 Current working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
@@ -76,7 +76,7 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Lowercase variables (`expression/variable.rs`)
 - [x] Uppercase variables (constructors)
 - [x] Qualified names (Module.name)
-- [ ] Operators
+- [x] Operators (`symbol.rs`)
 
 ### Basic Expressions
 - [x] Unit `()` (`expression/tuple.rs`)
@@ -114,7 +114,8 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] If expressions (`expression/if_.rs`)
 - [x] Case expressions (`expression/case.rs`)
 - [x] Let expressions (`expression/let_.rs`)
-- [ ] Binary operators
+- [x] Binary operators (`expression/mod.rs`, `symbol.rs`)
+- [x] Operator sections (`expression/tuple.rs`)
 
 ### Declarations
 - [ ] Value definitions
@@ -175,7 +176,9 @@ unicode_escape = 'u' '{' hex_digit hex_digit hex_digit hex_digit [ hex_digit [ h
 ### Expressions
 
 ```ebnf
-expression     = let_expr | case_expr | if_expr | lambda | possibly_neg_term { term } ;
+expression     = let_expr | case_expr | if_expr | lambda | binop_expr ;
+binop_expr     = possibly_neg_term { term } { operator binop_rhs } ;
+binop_rhs      = possibly_neg_term { term } | let_expr | case_expr | if_expr | lambda ;
 let_expr       = 'let' let_def { let_def } 'in' expression ;
 let_def        = definition | destructure ;
 definition     = lower_var [ ':' type_expr ] { pattern } '=' expression ;
@@ -196,10 +199,12 @@ inner_char     = lower | upper | digit | '_' ;
 string         = string_literal ;
 number         = number_literal ;  (* no floats in Nash *)
 list           = '[' [ expr { ',' expr } ] ']' ;
-tuple          = '(' ')' | '(' expr ')' | '(' expr ',' expr { ',' expr } ')' ;
+tuple          = '(' ')' | '(' operator ')' | '(' expr ')' | '(' expr ',' expr { ',' expr } ')' ;
 record         = '{' '}' | '{' lower_var '=' expr { ',' field } '}'
                | '{' lower_var '|' field { ',' field } '}' ;
 field          = lower_var '=' expr ;
+operator       = op_char { op_char } ;  (* except reserved: . | -> = : *)
+op_char        = '+' | '-' | '*' | '/' | '=' | '.' | '<' | '>' | ':' | '&' | '|' | '^' | '?' | '%' | '!' ;
 ```
 
 ### Patterns
