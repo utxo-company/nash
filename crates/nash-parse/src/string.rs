@@ -250,11 +250,10 @@ impl<'a> Parser<'a> {
                             }
                             let hex_str =
                                 unsafe { std::str::from_utf8_unchecked(&self.src[hex_start..pos]) };
-                            if let Ok(code) = u32::from_str_radix(hex_str, 16) {
-                                if let Some(c) = char::from_u32(code) {
+                            if let Ok(code) = u32::from_str_radix(hex_str, 16)
+                                && let Some(c) = char::from_u32(code) {
                                     result.push(c);
                                 }
-                            }
                             pos += 1; // skip '}'
                         }
                     }
@@ -316,7 +315,7 @@ impl<'a> Parser<'a> {
                 Some(b) if b.is_ascii_hexdigit() => {
                     let digit = if b.is_ascii_digit() {
                         (b - b'0') as u32
-                    } else if b >= b'a' && b <= b'f' {
+                    } else if (b'a'..=b'f').contains(&b) {
                         (b - b'a' + 10) as u32
                     } else {
                         (b - b'A' + 10) as u32
@@ -337,7 +336,7 @@ impl<'a> Parser<'a> {
         }
 
         // Check digit count (must be 4-6)
-        if num_digits < 4 || num_digits > 6 {
+        if !(4..=6).contains(&num_digits) {
             return EscapeResult::Problem(Escape::BadUnicodeLength {
                 code: (offset + 1) as u16,
                 expected: if num_digits < 4 { 4 } else { 6 },

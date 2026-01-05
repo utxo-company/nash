@@ -26,7 +26,7 @@ impl<'a> Parser<'a> {
         self.keyword_import(error::Module::ImportStart)?;
 
         self.chomp_and_check_indent(
-            |space, row, col| error::Module::Space(space, row, col),
+            error::Module::Space,
             error::Module::ImportIndentName,
         )?;
 
@@ -36,7 +36,7 @@ impl<'a> Parser<'a> {
         let module_name = self.add_end(start, name);
 
         // Chomp whitespace (not indent-checked, could be end of line)
-        self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
+        self.chomp(error::Module::Space)?;
 
         // Check what comes next: fresh line, or continuation (as/exposing)
         self.import_help(module_name)
@@ -81,14 +81,14 @@ impl<'a> Parser<'a> {
         self.keyword_as(error::Module::ImportAs)?;
 
         self.chomp_and_check_indent(
-            |space, row, col| error::Module::Space(space, row, col),
+            error::Module::Space,
             error::Module::ImportIndentAlias,
         )?;
 
         let alias = self.upper_name(error::Module::ImportAlias)?;
 
         // Chomp whitespace
-        self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
+        self.chomp(error::Module::Space)?;
 
         // Check for exposing or end
         if self.col == 1 {
@@ -116,7 +116,7 @@ impl<'a> Parser<'a> {
         self.keyword_exposing(error::Module::ImportExposing)?;
 
         self.chomp_and_check_indent(
-            |space, row, col| error::Module::Space(space, row, col),
+            error::Module::Space,
             error::Module::ImportIndentExposingList,
         )?;
 
@@ -127,7 +127,7 @@ impl<'a> Parser<'a> {
         )?;
 
         // Check for fresh line (end of import)
-        self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
+        self.chomp(error::Module::Space)?;
         self.check_fresh_line(error::Module::ImportEnd)?;
 
         Ok(self.alloc(Import {
@@ -163,14 +163,13 @@ impl<'a> Parser<'a> {
         loop {
             if self.peek() == Some(b'.') {
                 // Check if followed by uppercase
-                if let Some(next) = self.peek_at(1) {
-                    if next.is_ascii_uppercase() {
+                if let Some(next) = self.peek_at(1)
+                    && next.is_ascii_uppercase() {
                         self.advance(); // consume '.'
                         self.advance(); // consume first upper char
                         self.chomp_inner_chars();
                         continue;
                     }
-                }
             }
             // Not a dot or not followed by uppercase - done
             break;

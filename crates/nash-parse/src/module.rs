@@ -30,8 +30,8 @@ impl<'a> Parser<'a> {
         self.keyword_module(error::Module::Problem)?;
 
         self.chomp_and_check_indent(
-            |space, row, col| error::Module::Space(space, row, col),
-            |row, col| error::Module::Name(row, col),
+            error::Module::Space,
+            error::Module::Name,
         )?;
 
         // Parse module name (e.g., "Json.Decode")
@@ -40,7 +40,7 @@ impl<'a> Parser<'a> {
         let module_name = self.add_end(start, name);
 
         // Consume whitespace
-        self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
+        self.chomp(error::Module::Space)?;
 
         // Must have 'exposing' keyword
         self.keyword_exposing(|row, col| {
@@ -48,7 +48,7 @@ impl<'a> Parser<'a> {
         })?;
 
         self.chomp_and_check_indent(
-            |space, row, col| error::Module::Space(space, row, col),
+            error::Module::Space,
             |row, col| {
                 error::Module::Exposing(
                     self.bump.alloc(error::Exposing::IndentValue(row, col)),
@@ -137,7 +137,7 @@ impl<'a> Parser<'a> {
                     decls.push(decl);
 
                     // Chomp any trailing whitespace
-                    self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
+                    self.chomp(error::Module::Space)?;
 
                     // Check for fresh line (another declaration might follow)
                     if self.is_eof() {
@@ -204,7 +204,7 @@ impl<'a> Parser<'a> {
     /// ```
     pub fn module(&mut self) -> Result<Module<'a>, error::Module<'a>> {
         // Consume initial whitespace
-        self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
+        self.chomp(error::Module::Space)?;
 
         let start_pos = self.get_position();
 
@@ -214,7 +214,7 @@ impl<'a> Parser<'a> {
             match self.module_header() {
                 Ok((n, e)) => {
                     // Consume whitespace after header and check fresh line
-                    self.chomp(|space, row, col| error::Module::Space(space, row, col))?;
+                    self.chomp(error::Module::Space)?;
                     self.check_fresh_line(error::Module::FreshLine)?;
                     (Some(n), e)
                 }

@@ -72,7 +72,7 @@ impl<'a> Parser<'a> {
                 let doc = p.doc_comment(DeclErr::Start, |space, row, col| {
                     DeclErr::Space(space, row, col)
                 })?;
-                p.chomp(|space, row, col| DeclErr::Space(space, row, col))?;
+                p.chomp(DeclErr::Space)?;
                 p.check_fresh_line(DeclErr::FreshLineAfterDocComment)?;
                 Ok(Some(doc))
             })],
