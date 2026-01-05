@@ -2,9 +2,258 @@
 
 ## Current State
 
-**Next task:** Parser complete! Next phase: canonicalization or type checking
+**Parser complete!** Next phase: project configuration and driver infrastructure.
 
-Current working files:
+---
+
+## Compilation Target
+
+Nash compiles to **Untyped Plutus Core (UPLC)** - Cardano's smart contract language.
+
+**Key concepts:**
+- **Validators:** Entry points that compile to UPLC blobs
+- **Inlining:** All dependent code is inlined into a single UPLC blob per validator
+- **CEK Machine:** Cardano's abstract machine for UPLC execution
+- **nash-plutus:** Rust implementation of the CEK machine for local testing
+- **Tests:** Unit and property tests compile to UPLC and run on nash-plutus
+
+Modules do NOT individually compile to UPLC - only validators produce UPLC output.
+
+---
+
+## Next Milestones
+
+### Phase 1: Project Configuration (`nash-config`)
+
+**Goal:** Define project configuration types and parsing.
+
+**Architecture Decisions:**
+- **Format:** JSON5/JSONC (JSON with comments)
+- **Config types:** Application (exact versions) + Package (version constraints)
+- **Workspace:** Cargo-style embedded `workspace` section in root `nash.json`
+- **Lock file:** Single shared `nash.lock` at workspace root
+- **Dependencies:** Runtime-agnostic (no mandatory core deps), author/project naming
+- **Source discovery:** Convention-based (`src/` assumed)
+- **Validation:** Builder pattern collecting all errors
+
+**Types to implement:**
+```
+nash.json (Application):
+  source-directories: ["src"]  // optional, defaults to ["src"]
+  dependencies: { "author/pkg": "1.0.0" }
+  test-dependencies: { "author/test": "1.0.0" }
+
+nash.json (Package):
+  name: "author/package"
+  version: "1.0.0"
+  summary: "Short description"
+  license: "MIT"
+  exposed-modules: ["Module.Name"] or { "Category": ["Module"] }
+  dependencies: { "author/pkg": "1.0.0 <= v < 2.0.0" }
+
+nash.json (Workspace root):
+  workspace:
+    members: ["packages/*", "apps/my-app"]
+```
+
+**Reference:** `elm/builder/src/Elm/Outline.hs`
+
+---
+
+### Phase 2: Driver & Build System (`nash-driver`)
+
+**Goal:** File I/O abstraction, dependency graph, caching infrastructure.
+
+**Architecture Decisions:**
+- **Async model:** Runtime-agnostic (async traits, entry points pick runtime)
+- **FileSource trait:** In driver crate with implementations:
+  - `FileSystemSource` (native, `#[cfg(not(wasm32))]`)
+  - `InMemorySource` (universal, for LSP unsaved buffers)
+  - `FetchSource` (WASM, HTTP-based)
+  - `OverlaySource` (composition: InMemory overlays FileSystem)
+- **Build model:** Header-only crawl → dependency graph → compile in order
+- **Caching:** Interface-only (always regenerate UPLC), bincode serialization
+- **Persistence:** Interfaces persist to `.nash/`, graph rebuilt each run
+- **Parallelism:** Channels (mpsc/crossbeam) for worker coordination
+- **Invalidation:** Reverse dependency tracking for LSP
+- **Arenas:** Per-module bumpalo arenas
+
+**Reference:** `polarity/lang/driver/`, `elm/builder/src/Build.hs`
+
+---
+
+### Phase 3: Canonicalization (`nash-can`)
+
+**Goal:** Name resolution, scope checking, desugar syntax.
+
+**Transforms:**
+- Resolve all names to fully qualified form
+- Check for duplicate definitions
+- Validate imports (module exists, exposed items exist)
+- Desugar operators to function calls
+- Bind type variables
+- Collect module interface (public types, values)
+
+**Reference:** `elm/compiler/src/Canonicalize/`
+
+---
+
+### Phase 4: Type Inference (`nash-constrain` + `nash-solve`)
+
+**Goal:** Bidirectional type inference via constraint generation and solving.
+
+**nash-constrain:**
+- Generate type constraints from canonical AST
+- Track expected vs actual types
+- Handle pattern matching constraints
+
+**nash-solve:**
+- Unification algorithm
+- Let-polymorphism
+- Record types with row polymorphism
+- Exhaustiveness checking for patterns
+- Generate typed AST (`nash-ast`)
+
+**Reference:** `elm/compiler/src/Type/`
+
+---
+
+### Phase 5: UPLC Compilation
+
+**Goal:** Compile typed AST to Untyped Plutus Core.
+
+**Architecture:**
+- Validators are entry points
+- All dependencies inlined into single UPLC blob per validator
+- No separate module compilation - monolithic per-validator output
+
+**Crate:** TBD (nash-uplc? nash-codegen?)
+
+---
+
+### Phase 6: Plutus VM (`nash-plutus`)
+
+**Goal:** Rust implementation of Cardano's CEK machine for UPLC.
+
+**Purpose:**
+- Run unit tests locally without Cardano node
+- Run property-based tests
+- Fast iteration during development
+
+**Reference:** Cardano's CEK machine specification
+
+---
+
+### Phase 7: CLI (`nashc`)
+
+**Goal:** Full developer toolkit CLI.
+
+**Commands:**
+- `nashc check` - Type-check without generating UPLC
+- `nashc build` - Compile validators to UPLC
+- `nashc test` - Run tests via nash-plutus CEK machine
+- `nashc lsp` - Start language server
+- `nashc init` - Initialize new project
+- `nashc repl` - True stateful REPL
+- `nashc fmt` - Format source files
+- `nashc docs` - Generate documentation
+
+**Architecture:**
+- Uses clap for argument parsing
+- Entry point picks tokio runtime
+- Thin wrapper around driver/compiler
+
+**Reference:** `polarity/app/src/cli/`
+
+---
+
+### Phase 8: Language Server (`nash-language-server`)
+
+**Goal:** LSP implementation that works native and in WASM.
+
+**Architecture Decisions:**
+- **Library:** tower-lsp with `runtime-agnostic` feature
+- **Features:** Diagnostics, hover, goto-definition, formatting, code-actions
+- **Invalidation:** Reverse dependency tracking
+- **Unsaved buffers:** InMemorySource overlays FileSystemSource
+
+**Reference:** `polarity/lang/lsp/`
+
+---
+
+### Phase 9: Playground (`web/`)
+
+**Goal:** Browser-based Nash playground with LSP support.
+
+**Architecture Decisions:**
+- **Editor:** Monaco + wasm-bindgen
+- **File loading:** HTTP fetch from server
+- **LSP transport:** JSON-RPC over streams
+
+**Structure:**
+- `web/crates/lsp-wasm/` - WASM LSP entry point
+- `web/packages/web-editor/` - Monaco editor UI
+
+**Reference:** `polarity/web/`
+
+---
+
+### Phase 10: Package Registry & Dependency Resolution
+
+**Goal:** Publish packages, resolve dependencies.
+
+**Architecture Decisions:**
+- **Solver:** pubgrub crate
+- **Package naming:** author/project format
+- **Registry:** HTTP API (design TBD)
+
+---
+
+## Crate Organization
+
+```
+nash-script/compiler/
+├── crates/
+│   ├── nash-region/           # Source spans/positions
+│   ├── nash-source/           # Parsed AST types
+│   ├── nash-parse/            # Parser
+│   ├── nash-ast/              # Canonical/typed AST types
+│   ├── nash-can/              # Canonicalization
+│   ├── nash-constrain/        # Type constraint generation
+│   ├── nash-solve/            # Constraint solving (type inference)
+│   ├── nash-config/           # Project configuration (JSON5)
+│   ├── nash-driver/           # Build orchestration, FileSource (TBD)
+│   ├── nash-uplc/             # UPLC code generation (TBD)
+│   ├── nash-plutus/           # CEK machine for UPLC (TBD)
+│   ├── nash-language-server/  # LSP implementation
+│   └── nashc/                 # CLI binary
+├── web/                       # Playground (TBD)
+│   ├── crates/
+│   │   └── lsp-wasm/
+│   └── packages/
+│       └── web-editor/
+├── .nash/                     # Build artifacts (gitignored)
+└── nash.json                  # Project config
+```
+
+---
+
+## Error Reporting
+
+**Library:** miette
+
+**Features:**
+- Rich terminal diagnostics with source snippets
+- JSON output via miette's serialization
+- Suggestion system (port Elm's Levenshtein-based Suggest.hs)
+
+**Reference:** `elm/compiler/src/Reporting/`, `polarity` (uses miette)
+
+---
+
+## Current Working Files (Parser - Complete)
+
+Working files:
 - `crates/nash-parse/src/lib.rs` - Parser struct, combinators (`one_of`, `in_context`, `specialize`, `word1`, `word2`)
 - `crates/nash-parse/src/number.rs` - `number_literal` primitive
 - `crates/nash-parse/src/string.rs` - `string_literal` primitive
