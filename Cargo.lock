@@ -120,6 +120,10 @@ name = "nash-constrain"
 version = "0.1.0"
 
 [[package]]
+name = "nash-language-server"
+version = "0.1.0"
+
+[[package]]
 name = "nash-parse"
 version = "0.1.0"
 dependencies = [

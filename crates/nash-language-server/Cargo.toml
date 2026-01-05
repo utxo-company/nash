@@ -1,0 +1,10 @@
+[package]
+name = "nash-language-server"
+version.workspace = true
+edition.workspace = true
+description = "Language server for the nash programming language"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
