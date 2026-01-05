@@ -25,10 +25,7 @@ impl<'a> Parser<'a> {
         // Match 'import' keyword
         self.keyword_import(error::Module::ImportStart)?;
 
-        self.chomp_and_check_indent(
-            error::Module::Space,
-            error::Module::ImportIndentName,
-        )?;
+        self.chomp_and_check_indent(error::Module::Space, error::Module::ImportIndentName)?;
 
         // Parse module name (e.g., "Json.Decode")
         let start = self.get_position();
@@ -80,10 +77,7 @@ impl<'a> Parser<'a> {
     ) -> Result<&'a Import<'a>, error::Module<'a>> {
         self.keyword_as(error::Module::ImportAs)?;
 
-        self.chomp_and_check_indent(
-            error::Module::Space,
-            error::Module::ImportIndentAlias,
-        )?;
+        self.chomp_and_check_indent(error::Module::Space, error::Module::ImportIndentAlias)?;
 
         let alias = self.upper_name(error::Module::ImportAlias)?;
 
@@ -164,12 +158,13 @@ impl<'a> Parser<'a> {
             if self.peek() == Some(b'.') {
                 // Check if followed by uppercase
                 if let Some(next) = self.peek_at(1)
-                    && next.is_ascii_uppercase() {
-                        self.advance(); // consume '.'
-                        self.advance(); // consume first upper char
-                        self.chomp_inner_chars();
-                        continue;
-                    }
+                    && next.is_ascii_uppercase()
+                {
+                    self.advance(); // consume '.'
+                    self.advance(); // consume first upper char
+                    self.chomp_inner_chars();
+                    continue;
+                }
             }
             // Not a dot or not followed by uppercase - done
             break;

@@ -209,6 +209,7 @@ impl<'a> Parser<'a> {
     ///     ],
     /// )
     /// ```
+    #[allow(clippy::type_complexity)]
     pub fn one_of<T, E>(
         &mut self,
         to_error: impl FnOnce(Row, Col) -> E,
@@ -244,6 +245,7 @@ impl<'a> Parser<'a> {
     /// ```haskell
     /// oneOfWithFallback :: [Parser x a] -> a -> Parser x a
     /// ```
+    #[allow(clippy::type_complexity)]
     pub fn one_of_with_fallback<T, E>(
         &mut self,
         parsers: Vec<Box<dyn FnOnce(&mut Self) -> Result<T, E> + '_>>,

@@ -24,10 +24,7 @@ impl<'a> Parser<'a> {
     pub fn exposing(&mut self) -> Result<Exposing<'a>, error::Exposing> {
         // Opening paren
         self.word1(b'(', error::Exposing::Start)?;
-        self.chomp_and_check_indent(
-            error::Exposing::Space,
-            error::Exposing::IndentValue,
-        )?;
+        self.chomp_and_check_indent(error::Exposing::Space, error::Exposing::IndentValue)?;
 
         // Either ".." for open, or explicit list
         self.one_of(
@@ -36,20 +33,14 @@ impl<'a> Parser<'a> {
                 // (..)
                 Box::new(|p: &mut Parser<'a>| {
                     p.word2(b'.', b'.', error::Exposing::Value)?;
-                    p.chomp_and_check_indent(
-                        error::Exposing::Space,
-                        error::Exposing::IndentEnd,
-                    )?;
+                    p.chomp_and_check_indent(error::Exposing::Space, error::Exposing::IndentEnd)?;
                     p.word1(b')', error::Exposing::End)?;
                     Ok(Exposing::Open)
                 }),
                 // Explicit list
                 Box::new(|p: &mut Parser<'a>| {
                     let exposed = p.chomp_exposed()?;
-                    p.chomp_and_check_indent(
-                        error::Exposing::Space,
-                        error::Exposing::IndentEnd,
-                    )?;
+                    p.chomp_and_check_indent(error::Exposing::Space, error::Exposing::IndentEnd)?;
                     p.exposing_help(vec![exposed])
                 }),
             ],
@@ -135,10 +126,7 @@ impl<'a> Parser<'a> {
                 Box::new(|p: &mut Parser<'a>| {
                     let name = p.upper_name(error::Exposing::Value)?;
                     let located = p.add_end(start, name);
-                    p.chomp_and_check_indent(
-                        error::Exposing::Space,
-                        error::Exposing::IndentEnd,
-                    )?;
+                    p.chomp_and_check_indent(error::Exposing::Space, error::Exposing::IndentEnd)?;
                     let privacy = p.privacy()?;
                     Ok(p.alloc(Exposed::Upper {
                         name: located,
@@ -156,17 +144,11 @@ impl<'a> Parser<'a> {
         self.one_of_with_fallback(
             vec![Box::new(|p: &mut Parser<'a>| {
                 p.word1(b'(', error::Exposing::TypePrivacy)?;
-                p.chomp_and_check_indent(
-                    error::Exposing::Space,
-                    error::Exposing::TypePrivacy,
-                )?;
+                p.chomp_and_check_indent(error::Exposing::Space, error::Exposing::TypePrivacy)?;
                 let start = p.get_position();
                 p.word2(b'.', b'.', error::Exposing::TypePrivacy)?;
                 let end = p.get_position();
-                p.chomp_and_check_indent(
-                    error::Exposing::Space,
-                    error::Exposing::TypePrivacy,
-                )?;
+                p.chomp_and_check_indent(error::Exposing::Space, error::Exposing::TypePrivacy)?;
                 p.word1(b')', error::Exposing::TypePrivacy)?;
                 Ok(Privacy::Public(Region::new(start, end)))
             })],

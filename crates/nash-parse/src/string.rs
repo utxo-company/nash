@@ -251,9 +251,10 @@ impl<'a> Parser<'a> {
                             let hex_str =
                                 unsafe { std::str::from_utf8_unchecked(&self.src[hex_start..pos]) };
                             if let Ok(code) = u32::from_str_radix(hex_str, 16)
-                                && let Some(c) = char::from_u32(code) {
-                                    result.push(c);
-                                }
+                                && let Some(c) = char::from_u32(code)
+                            {
+                                result.push(c);
+                            }
                             pos += 1; // skip '}'
                         }
                     }

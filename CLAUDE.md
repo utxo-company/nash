@@ -100,6 +100,18 @@ Update SPEC.md as features are implemented.
 4. Run `cargo insta test`, review snapshots
 5. Mark complete in SPEC.md
 
+## Validation
+
+After making changes, run these checks before committing:
+
+```bash
+cargo fmt --all          # format code
+cargo clippy --all-targets --all-features -- -D warnings  # lint (warnings = errors)
+cargo test               # run tests
+```
+
+These same checks run in CI on every push/PR.
+
 ## Error Messages
 
 We are porting Elm's full error hierarchy from `Reporting/Error/Syntax.hs`. Error types are nested (Module contains Decl, Decl contains Expr, etc.) to enable Elm-quality error messages.

@@ -526,23 +526,6 @@ macro_rules! assert_type_snapshot {
 }
 
 #[cfg(test)]
-macro_rules! assert_type_error_snapshot {
-    ($code:expr) => {{
-        let bump = bumpalo::Bump::new();
-        let src = bump.alloc_str(indoc::indoc!($code));
-        let mut parser = $crate::Parser::new(&bump, src.as_bytes());
-        let result = parser.type_expr().expect_err("expected parse error");
-
-        insta::with_settings!({
-            description => format!("Code:\n\n{}", indoc::indoc!($code)),
-            omit_expression => true,
-        }, {
-            insta::assert_debug_snapshot!(result);
-        });
-    }};
-}
-
-#[cfg(test)]
 mod tests {
     // Type variables
     #[test]

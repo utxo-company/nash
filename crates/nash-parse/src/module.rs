@@ -29,10 +29,7 @@ impl<'a> Parser<'a> {
         // Match 'module' keyword
         self.keyword_module(error::Module::Problem)?;
 
-        self.chomp_and_check_indent(
-            error::Module::Space,
-            error::Module::Name,
-        )?;
+        self.chomp_and_check_indent(error::Module::Space, error::Module::Name)?;
 
         // Parse module name (e.g., "Json.Decode")
         let start = self.get_position();
@@ -47,16 +44,13 @@ impl<'a> Parser<'a> {
             error::Module::Exposing(self.bump.alloc(error::Exposing::Start(row, col)), row, col)
         })?;
 
-        self.chomp_and_check_indent(
-            error::Module::Space,
-            |row, col| {
-                error::Module::Exposing(
-                    self.bump.alloc(error::Exposing::IndentValue(row, col)),
-                    row,
-                    col,
-                )
-            },
-        )?;
+        self.chomp_and_check_indent(error::Module::Space, |row, col| {
+            error::Module::Exposing(
+                self.bump.alloc(error::Exposing::IndentValue(row, col)),
+                row,
+                col,
+            )
+        })?;
 
         // Parse the exposing list, wrapping errors
         let exposing_start = self.get_position();
@@ -259,6 +253,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Categorize declarations into separate slices by type.
+    #[allow(clippy::type_complexity)]
     fn categorize_decls(
         &self,
         decls: Vec<Decl<'a>>,
