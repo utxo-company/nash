@@ -361,8 +361,6 @@ pub(crate) use assert_pattern_snapshot;
 
 #[cfg(test)]
 mod tests {
-    use super::assert_pattern_snapshot;
-
     // Cons patterns
     #[test]
     fn cons_simple() {

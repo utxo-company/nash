@@ -419,8 +419,6 @@ pub(crate) use assert_expression_snapshot;
 
 #[cfg(test)]
 mod tests {
-    use super::assert_expression_snapshot;
-
     #[test]
     fn negate_var() {
         assert_expression_snapshot!("-x");
