@@ -2,9 +2,18 @@
 name = "nash-config"
 version.workspace = true
 edition.workspace = true
-description = "nash workspace and project config file"
+description = "Nash project configuration file parsing"
+readme = "README.md"
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 
 [dependencies]
+jsonc-parser.workspace = true
+pubgrub.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+indoc.workspace = true
+insta.workspace = true

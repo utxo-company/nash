@@ -13,7 +13,11 @@
       "Bash(git commit:*)",
       "Bash(cargo clippy:*)",
       "Bash(cargo fmt:*)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:docs.rs)",
+      "Bash(cargo doc:*)",
+      "Bash(grep:*)"
     ]
   }
 }

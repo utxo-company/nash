@@ -13,6 +13,10 @@ license = "Apache-2.0"
 bumpalo = { version = "3.19.1", features = ["collections"] }
 indoc = "2"
 insta = { version = "1.43.1", features = ["yaml"] }
+jsonc-parser = "0.24"
+pubgrub = { version = "0.3", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
 # internal crates
 nash-ast = { path = "crates/nash-ast" }
 nash-can = { path = "crates/nash-can" }
