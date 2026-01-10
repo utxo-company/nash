@@ -23,38 +23,67 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
 
 ## Next Milestones
 
-### Phase 1: Project Configuration (`nash-config`)
+### Phase 1: Project Configuration (`nash-config`) ✅
 
 **Goal:** Define project configuration types and parsing.
 
+**Status:** Complete
+
 **Architecture Decisions:**
-- **Format:** JSON5/JSONC (JSON with comments)
-- **Config types:** Application (exact versions) + Package (version constraints)
-- **Workspace:** Cargo-style embedded `workspace` section in root `nash.json`
-- **Lock file:** Single shared `nash.lock` at workspace root
-- **Dependencies:** Runtime-agnostic (no mandatory core deps), author/project naming
-- **Source discovery:** Convention-based (`src/` assumed)
-- **Validation:** Builder pattern collecting all errors
+- **Format:** JSONC (`nash.jsonc`) - JSON with comments, parsed via `jsonc-parser`
+- **Config types:** Three separate types: `application`, `package`, `workspace`
+- **Field naming:** camelCase (`sourceDirectories`, `exposedModules`, `testDependencies`)
+- **Lock file:** Single shared `nash.lock` at workspace root (TBD in driver)
+- **Dependencies:** Runtime-agnostic (no mandatory core deps), `author/project` naming
+- **Dependency syntax:** Constraint string or object (`{ "workspace": true }`, `{ "path": "..." }`, `{ "git": "..." }`)
+- **Source discovery:** Convention-based (`src/` default)
+- **Error messages:** Line/column accurate via AST-based parsing
 
-**Types to implement:**
+**Config Types:**
+
+```jsonc
+// Application - compiles to UPLC validators
+{
+    "type": "application",
+    "sourceDirectories": ["src"],
+    "dependencies": {
+        "nash/core": "1.0.0 <= v < 2.0.0",
+        "alice/json": { "workspace": true },
+        "bob/lib": { "path": "../lib" },
+        "carol/experimental": { "git": "https://...", "branch": "main" }
+    },
+    "testDependencies": { }
+}
+
+// Package - publishable library
+{
+    "type": "package",
+    "name": "author/package",
+    "version": "1.0.0",
+    "summary": "Short description",
+    "license": "MIT",
+    "exposedModules": ["Module.Name"],  // or { "Category": ["Module"] }
+    "dependencies": { },
+    "testDependencies": { }
+}
+
+// Workspace - collection of projects sharing dependencies
+{
+    "type": "workspace",
+    "members": ["packages/*", "apps/my-app"],
+    "dependencies": {
+        "nash/core": "1.0.0 <= v < 2.0.0"  // available for { "workspace": true }
+    }
+}
 ```
-nash.json (Application):
-  source-directories: ["src"]  // optional, defaults to ["src"]
-  dependencies: { "author/pkg": "1.0.0" }
-  test-dependencies: { "author/test": "1.0.0" }
 
-nash.json (Package):
-  name: "author/package"
-  version: "1.0.0"
-  summary: "Short description"
-  license: "MIT"
-  exposed-modules: ["Module.Name"] or { "Category": ["Module"] }
-  dependencies: { "author/pkg": "1.0.0 <= v < 2.0.0" }
-
-nash.json (Workspace root):
-  workspace:
-    members: ["packages/*", "apps/my-app"]
-```
+**Crate contents:**
+- `config.rs` - Config, Application, Package, Workspace, Dependency types
+- `parse.rs` - AST-based JSONC parsing with position tracking
+- `error.rs` - Position-aware error types
+- `name.rs` - PackageName (`author/project` format)
+- `nash.schema.json` - JSON Schema for IDE support
+- `README.md` - Documentation
 
 **Reference:** `elm/builder/src/Elm/Outline.hs`
 
