@@ -10,18 +10,25 @@ repository = "https://github.com/nash-script/compiler"
 license = "Apache-2.0"
 
 [workspace.dependencies]
+async-trait = "0.1"
+bincode = "1"
 bumpalo = { version = "3.19.1", features = ["collections"] }
 indoc = "2"
 insta = { version = "1.43.1", features = ["yaml"] }
 jsonc-parser = "0.24"
+glob = "0.3"
+miette = { version = "7", features = ["fancy"] }
 pubgrub = { version = "0.3", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs"] }
+url = "2"
 # internal crates
 nash-ast = { path = "crates/nash-ast" }
 nash-can = { path = "crates/nash-can" }
 nash-config = { path = "crates/nash-config" }
 nash-constrain = { path = "crates/nash-constrain" }
+nash-driver = { path = "crates/nash-driver" }
 nash-language-server = { path = "crates/nash-language-server" }
 nash-parse = { path = "crates/nash-parse" }
 nash-region = { path = "crates/nash-region" }

@@ -89,7 +89,7 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
 
 ---
 
-### Phase 2: Driver & Build System (`nash-driver`)
+### Phase 2: Driver & Build System (`nash-driver`) ✅
 
 **Goal:** File I/O abstraction, dependency graph, caching infrastructure.
 
@@ -98,14 +98,25 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
 - **FileSource trait:** In driver crate with implementations:
   - `FileSystemSource` (native, `#[cfg(not(wasm32))]`)
   - `InMemorySource` (universal, for LSP unsaved buffers)
-  - `FetchSource` (WASM, HTTP-based)
   - `OverlaySource` (composition: InMemory overlays FileSystem)
 - **Build model:** Header-only crawl → dependency graph → compile in order
 - **Caching:** Interface-only (always regenerate UPLC), bincode serialization
-- **Persistence:** Interfaces persist to `.nash/`, graph rebuilt each run
-- **Parallelism:** Channels (mpsc/crossbeam) for worker coordination
+- **Persistence:** Interfaces persist to `.nash/interfaces/`, graph rebuilt each run
+- **Parallelism:** tokio tasks + JoinSet for parallel compilation by dependency level
 - **Invalidation:** Reverse dependency tracking for LSP
 - **Arenas:** Per-module bumpalo arenas
+
+**Implementation (`crates/nash-driver/`):**
+- `source.rs`: `FileSource` trait + `FileSystemSource`, `InMemorySource`, `OverlaySource`
+- `database.rs`: Compilation database with source caching and dependency tracking
+- `project.rs`: Project loading from `nash.jsonc`, workspace member discovery
+- `graph.rs`: Dependency graph construction with topological sort and cycle detection
+- `compile.rs`: Parallel compilation orchestration with `tokio::task::JoinSet`
+- `interface.rs`: Interface serialization with bincode for incremental builds
+- `error.rs`: Driver error types with miette diagnostics
+
+**CLI (`crates/nashc/`):**
+- `nashc check [PATH]` - Type check a Nash project
 
 **Reference:** `polarity/lang/driver/`, `elm/builder/src/Build.hs`
 
@@ -250,8 +261,8 @@ nash-script/compiler/
 │   ├── nash-can/              # Canonicalization
 │   ├── nash-constrain/        # Type constraint generation
 │   ├── nash-solve/            # Constraint solving (type inference)
-│   ├── nash-config/           # Project configuration (JSON5)
-│   ├── nash-driver/           # Build orchestration, FileSource (TBD)
+│   ├── nash-config/           # Project configuration (JSONC)
+│   ├── nash-driver/           # Build orchestration, FileSource
 │   ├── nash-uplc/             # UPLC code generation (TBD)
 │   ├── nash-plutus/           # CEK machine for UPLC (TBD)
 │   ├── nash-language-server/  # LSP implementation

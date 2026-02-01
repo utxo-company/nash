@@ -1,0 +1,29 @@
+[package]
+name = "nash-driver"
+version.workspace = true
+edition.workspace = true
+description = "Build system and driver for Nash projects"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+bincode.workspace = true
+bumpalo.workspace = true
+glob.workspace = true
+miette.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "fs"] }
+url.workspace = true
+
+nash-config.workspace = true
+nash-parse.workspace = true
+nash-region.workspace = true
+nash-source.workspace = true
+
+[dev-dependencies]
+indoc.workspace = true
+insta.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

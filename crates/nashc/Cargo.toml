@@ -7,4 +7,11 @@ homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "nashc"
+path = "src/main.rs"
+
 [dependencies]
+miette.workspace = true
+nash-driver.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
