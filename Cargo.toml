@@ -33,7 +33,7 @@ nash-parse = { path = "crates/nash-parse", version = "0.2.0" }
 nash-region = { path = "crates/nash-region", version = "0.2.0" }
 nash-solve = { path = "crates/nash-solve", version = "0.1.0" }
 nash-source = { path = "crates/nash-source", version = "0.2.0" }
-nashc = { path = "crates/nashc", version = "0.1.0" }
+nashc = { path = "crates/nashc", version = "0.1.1" }
 
 # Optimize insta/similar in dev for faster diffs
 [profile.dev.package]
