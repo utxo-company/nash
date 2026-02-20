@@ -9,4 +9,4 @@ license.workspace = true
 
 [dependencies]
 bumpalo.workspace = true
-nash-region.workspace = true
+nash-region = { path = "../nash-region", version = "0.2.0" }

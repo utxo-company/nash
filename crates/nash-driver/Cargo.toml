@@ -18,10 +18,10 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "fs"] }
 url.workspace = true
 
-nash-config.workspace = true
-nash-parse.workspace = true
-nash-region.workspace = true
-nash-source.workspace = true
+nash-config = { path = "../nash-config", version = "0.2.0" }
+nash-parse = { path = "../nash-parse", version = "0.2.0" }
+nash-region = { path = "../nash-region", version = "0.2.0" }
+nash-source = { path = "../nash-source", version = "0.2.0" }
 
 [dev-dependencies]
 indoc.workspace = true
