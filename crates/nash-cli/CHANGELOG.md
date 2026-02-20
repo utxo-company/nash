@@ -1,5 +1,11 @@
 # nash-cli
 
+## 0.1.3 — 2026-02-20
+
+### Patch changes
+
+- [8a40dbe](https://github.com/nash-script/compiler/commit/8a40dbe43869de6453b6a7bb5dce04d3b900efcf) Add module-level doc comments to lib.rs. — Thanks @rvcas!
+
 ## 0.1.2 — 2026-02-20
 
 ### Patch changes
