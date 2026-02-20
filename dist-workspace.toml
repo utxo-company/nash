@@ -10,14 +10,25 @@ ci = "github"
 # The installers to generate for each app
 installers = ["shell", "powershell", "npm", "homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+targets = [
+  "aarch64-apple-darwin",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc"
+]
 # A GitHub repo to push Homebrew formulas to
 tap = "nash-script/homebrew-tap"
+formula = "nash"
 # A namespace to use when publishing this package to the npm registry
 npm-scope = "@nash-script"
+# The npm package should have this name
+npm-package = "cli"
 # Path that installers should place binaries in
-install-path = "CARGO_HOME"
+install-path = ["$XDG_BIN_HOME/", "~/.local/bin/"]
 # Publish jobs to run in CI
-publish-jobs = ["homebrew"]
+publish-jobs = ["homebrew", "npm"]
 # Whether to install an updater program
 install-updater = false
+# Only trigger binary builds for nash-cli tags (ignore library crate tags)
+tag-namespace = "nash-cli"

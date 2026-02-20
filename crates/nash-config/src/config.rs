@@ -24,6 +24,10 @@ pub enum Config {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Application {
+    /// Required compiler version (semver).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compiler: Option<String>,
+
     /// Source directories. Defaults to `["src"]` if not specified.
     #[serde(default = "default_source_dirs")]
     pub source_directories: Vec<String>,
@@ -47,6 +51,10 @@ fn default_source_dirs() -> Vec<String> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Package {
+    /// Required compiler version (semver).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compiler: Option<String>,
+
     /// Package name in `author/project` format.
     pub name: PackageName,
 
@@ -98,12 +106,27 @@ impl ExposedModules {
 /// A workspace is a collection of related projects that share dependencies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
+    /// Required compiler version (semver).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compiler: Option<String>,
+
     /// Glob patterns for workspace members.
     pub members: Vec<String>,
 
     /// Dependencies available for members to inherit via `{ "workspace": true }`.
     #[serde(default)]
     pub dependencies: BTreeMap<PackageName, Dependency>,
+}
+
+impl Config {
+    /// Returns the `compiler` version requirement, if specified.
+    pub fn compiler(&self) -> Option<&str> {
+        match self {
+            Config::Application(app) => app.compiler.as_deref(),
+            Config::Package(pkg) => pkg.compiler.as_deref(),
+            Config::Workspace(ws) => ws.compiler.as_deref(),
+        }
+    }
 }
 
 // ============================================================================

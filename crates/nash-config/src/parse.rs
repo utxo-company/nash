@@ -73,6 +73,8 @@ fn parse_application(
     path: &Path,
     obj: &Object,
 ) -> Result<Application, ConfigError> {
+    let compiler = parse_optional_string(contents, path, obj, "compiler")?;
+
     let source_directories = if let Some(prop) = find_property(obj, "sourceDirectories") {
         parse_string_array(contents, path, &prop.value, "sourceDirectories")?
     } else {
@@ -92,6 +94,7 @@ fn parse_application(
     };
 
     Ok(Application {
+        compiler,
         source_directories,
         dependencies,
         test_dependencies,
@@ -99,6 +102,8 @@ fn parse_application(
 }
 
 fn parse_package(contents: &str, path: &Path, obj: &Object) -> Result<Package, ConfigError> {
+    let compiler = parse_optional_string(contents, path, obj, "compiler")?;
+
     let name = parse_required_string(contents, path, obj, "name")?;
     let name: PackageName = name.parse().map_err(|e: PackageNameError| {
         ConfigError::invalid_package_name(
@@ -132,6 +137,7 @@ fn parse_package(contents: &str, path: &Path, obj: &Object) -> Result<Package, C
     };
 
     Ok(Package {
+        compiler,
         name,
         version,
         summary,
@@ -143,6 +149,8 @@ fn parse_package(contents: &str, path: &Path, obj: &Object) -> Result<Package, C
 }
 
 fn parse_workspace(contents: &str, path: &Path, obj: &Object) -> Result<Workspace, ConfigError> {
+    let compiler = parse_optional_string(contents, path, obj, "compiler")?;
+
     let members = {
         let prop = find_property(obj, "members").ok_or_else(|| {
             ConfigError::missing_field(path, "members", position_of(contents, obj.range))
@@ -173,6 +181,7 @@ fn parse_workspace(contents: &str, path: &Path, obj: &Object) -> Result<Workspac
     };
 
     Ok(Workspace {
+        compiler,
         members,
         dependencies,
     })
@@ -357,6 +366,23 @@ fn parse_string_array_inner(
     }
 
     Ok(result)
+}
+
+fn parse_optional_string(
+    contents: &str,
+    path: &Path,
+    obj: &Object,
+    field_name: &str,
+) -> Result<Option<String>, ConfigError> {
+    let Some(prop) = find_property(obj, field_name) else {
+        return Ok(None);
+    };
+
+    let value = prop.value.as_string_lit().ok_or_else(|| {
+        ConfigError::expected_string(path, position_of(contents, prop.value.range()))
+    })?;
+
+    Ok(Some(value.value.to_string()))
 }
 
 fn parse_required_string(
@@ -648,6 +674,62 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("must be true"));
+    }
+
+    #[test]
+    fn parse_application_with_compiler_field() {
+        let json = indoc! {r#"
+            {
+                "type": "application",
+                "compiler": "0.2.0",
+                "dependencies": {
+                    "nash/core": "1.0.0 <= v < 2.0.0"
+                }
+            }
+        "#};
+
+        let config = parse(json, "test.jsonc").unwrap();
+
+        match &config {
+            Config::Application(app) => {
+                assert_eq!(app.compiler.as_deref(), Some("0.2.0"));
+            }
+            _ => panic!("expected application config"),
+        }
+        assert_eq!(config.compiler(), Some("0.2.0"));
+    }
+
+    #[test]
+    fn parse_workspace_with_compiler_field() {
+        let json = indoc! {r#"
+            {
+                "type": "workspace",
+                "compiler": "0.3.0",
+                "members": ["packages/*"]
+            }
+        "#};
+
+        let config = parse(json, "test.jsonc").unwrap();
+
+        match config {
+            Config::Workspace(ws) => {
+                assert_eq!(ws.compiler.as_deref(), Some("0.3.0"));
+            }
+            _ => panic!("expected workspace config"),
+        }
+    }
+
+    #[test]
+    fn compiler_field_is_optional() {
+        let json = indoc! {r#"
+            {
+                "type": "application",
+                "dependencies": {}
+            }
+        "#};
+
+        let config = parse(json, "test.jsonc").unwrap();
+        assert_eq!(config.compiler(), None);
     }
 
     #[test]

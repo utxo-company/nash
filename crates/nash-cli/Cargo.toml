@@ -1,0 +1,30 @@
+[package]
+name = "nash-cli"
+version = "0.1.0"
+edition.workspace = true
+description = "The Nash programming language"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[lib]
+name = "nash_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nash"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+color-print.workspace = true
+dirs.workspace = true
+futures.workspace = true
+miette.workspace = true
+nash-config.workspace = true
+nash-driver.workspace = true
+octocrab.workspace = true
+tar.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+xz2.workspace = true
+zip.workspace = true

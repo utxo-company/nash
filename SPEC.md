@@ -115,8 +115,8 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
 - `interface.rs`: Interface serialization with bincode for incremental builds
 - `error.rs`: Driver error types with miette diagnostics
 
-**CLI (`crates/nashc/`):**
-- `nashc check [PATH]` - Type check a Nash project
+**CLI (`crates/nash-cli/`):**
+- `nash check [PATH]` - Type check a Nash project
 
 **Reference:** `polarity/lang/driver/`, `elm/builder/src/Build.hs`
 
@@ -184,19 +184,24 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
 
 ---
 
-### Phase 7: CLI (`nashc`)
+### Phase 7: CLI (`nash-cli`)
 
-**Goal:** Full developer toolkit CLI.
+**Goal:** Full developer toolkit CLI — a single `nash` binary.
 
 **Commands:**
-- `nashc check` - Type-check without generating UPLC
-- `nashc build` - Compile validators to UPLC
-- `nashc test` - Run tests via nash-plutus CEK machine
-- `nashc lsp` - Start language server
-- `nashc init` - Initialize new project
-- `nashc repl` - True stateful REPL
-- `nashc fmt` - Format source files
-- `nashc docs` - Generate documentation
+- `nash check` - Type-check without generating UPLC
+- `nash build` - Compile validators to UPLC
+- `nash test` - Run tests via nash-plutus CEK machine
+- `nash lsp` - Start language server
+- `nash init` - Initialize new project
+- `nash repl` - True stateful REPL
+- `nash fmt` - Format source files
+- `nash docs` - Generate documentation
+
+**Compiler version management:**
+- Projects specify `"compiler": "X.Y.Z"` in `nash.jsonc`
+- If the running `nash` binary matches, it compiles directly
+- If not, checks `~/.nash/versions/<version>/nash` for a cached copy and exec's it
 
 **Architecture:**
 - Uses clap for argument parsing
@@ -266,7 +271,7 @@ nash-script/compiler/
 │   ├── nash-uplc/             # UPLC code generation (TBD)
 │   ├── nash-plutus/           # CEK machine for UPLC (TBD)
 │   ├── nash-language-server/  # LSP implementation
-│   └── nashc/                 # CLI binary
+│   └── nash-cli/              # CLI binary (`nash`)
 ├── web/                       # Playground (TBD)
 │   ├── crates/
 │   │   └── lsp-wasm/
