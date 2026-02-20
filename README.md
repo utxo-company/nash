@@ -1,10 +1,37 @@
 # nash
 
-## dev
+## Development
 
-- install [blst](https://github.com/supranational/blst)
-- install [secp256k1](https://github.com/bitcoin-core/secp256k1)
-  - brew install secp256k1
+### Validation
+
+Before pushing, run:
+
+```sh
+cargo fmt --all
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+```
+
+### Changesets
+
+We use [sampo](https://github.com/bruits/sampo) for versioning and releases. When you make a notable change, add a changeset:
+
+```sh
+sampo add
+```
+
+Only list crates you actually changed -- sampo automatically bumps dependents.
+
+### Release flow
+
+1. Push to `main` with a changeset file
+2. Sampo CI creates/updates a release PR that bumps versions and generates changelogs
+3. Merge the release PR
+4. Sampo publishes crates to crates.io and pushes version tags
+5. Tags trigger cargo-dist to build and publish:
+   - GitHub Releases with platform binaries
+   - Homebrew formula (`brew install nash-script/tap/nash`)
+   - npm package (`npx @nash-script/cli`)
 
 ## Docs
 
