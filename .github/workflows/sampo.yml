@@ -1,0 +1,25 @@
+name: Sampo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sampo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Sampo
+        id: sampo
+        uses: bruits/sampo/crates/sampo-github-action@main
+        with:
+          cargo-token: ${{ secrets.CARGO_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
