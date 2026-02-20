@@ -1,22 +1,3 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "permissions": {
-    "allow": [
-      "Bash(cargo check:*)",
-      "Bash(cargo test:*)",
-      "Bash(cargo insta:*)",
-      "Bash(cat:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(cargo clippy:*)",
-      "Bash(cargo fmt:*)",
-      "WebSearch",
-      "WebFetch(domain:crates.io)",
-      "WebFetch(domain:docs.rs)",
-      "Bash(cargo build:*)",
-      "Bash(cargo run:*)",
-      "Bash(cargo doc:*)",
-      "Bash(grep:*)"
-    ]
-  }
+  "$schema": "https://json.schemastore.org/claude-code-settings.json"
 }
