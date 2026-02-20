@@ -1,5 +1,11 @@
 # nash-cli
 
+## 0.1.2 — 2026-02-20
+
+### Patch changes
+
+- [5cc62cc](https://github.com/nash-script/compiler/commit/5cc62cc9ce5568bb779f542b872909dc71942578) Add explicit about text to CLI help output. — Thanks @rvcas!
+
 ## 0.1.1 — 2026-02-20
 
 ### Patch changes
