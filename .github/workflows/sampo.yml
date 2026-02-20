@@ -22,4 +22,4 @@ jobs:
         with:
           cargo-token: ${{ secrets.CARGO_TOKEN }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

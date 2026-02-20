@@ -3,7 +3,7 @@ use clap::Parser;
 use crate::cmd;
 
 #[derive(Parser)]
-#[command(name = "nash", version, about, long_about = Some(crate::BANNER))]
+#[command(name = "nash", version, about = "The Nash programming language compiler", long_about = Some(crate::BANNER))]
 #[command(propagate_version = true)]
 pub struct Cli {
     #[command(subcommand)]
