@@ -1,6 +1,10 @@
+/// CLI argument parsing and dispatch.
 pub mod cli;
+/// Subcommand implementations.
 pub mod cmd;
+/// GitHub release downloading and archive extraction.
 mod download;
+/// Compiler version proxy logic.
 pub mod proxy;
 
 pub use cli::Cli;
