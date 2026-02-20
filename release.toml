@@ -1,3 +1,0 @@
-shared-version = true
-publish = true
-tag-name = "v{{version}}"
