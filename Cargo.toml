@@ -30,9 +30,9 @@ nash-constrain = { path = "crates/nash-constrain", version = "0.1.0" }
 nash-driver = { path = "crates/nash-driver", version = "0.1.0" }
 nash-language-server = { path = "crates/nash-language-server", version = "0.1.0" }
 nash-parse = { path = "crates/nash-parse", version = "0.2.0" }
-nash-region = { path = "crates/nash-region", version = "0.1.0" }
+nash-region = { path = "crates/nash-region", version = "0.2.0" }
 nash-solve = { path = "crates/nash-solve", version = "0.1.0" }
-nash-source = { path = "crates/nash-source", version = "0.1.0" }
+nash-source = { path = "crates/nash-source", version = "0.2.0" }
 nashc = { path = "crates/nashc", version = "0.1.0" }
 
 # Optimize insta/similar in dev for faster diffs
