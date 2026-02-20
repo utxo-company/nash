@@ -1,6 +1,6 @@
 [package]
 name = "nash-driver"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 description = "Build system and driver for Nash projects"
 homepage.workspace = true
@@ -18,7 +18,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "fs"] }
 url.workspace = true
 
-nash-config = { path = "../nash-config", version = "0.2.0" }
+nash-config = { path = "../nash-config", version = "0.3.0" }
 nash-parse = { path = "../nash-parse", version = "0.2.0" }
 nash-region = { path = "../nash-region", version = "0.2.0" }
 nash-source = { path = "../nash-source", version = "0.2.0" }
