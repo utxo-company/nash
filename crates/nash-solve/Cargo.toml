@@ -1,6 +1,6 @@
 [package]
 name = "nash-solve"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 description = "The entry point of nash's type inference system. Implements type inference and specialization of traits."
 homepage.workspace = true

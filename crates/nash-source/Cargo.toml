@@ -1,6 +1,6 @@
 [package]
 name = "nash-source"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 description = "Source AST for the nash programming language"
 homepage.workspace = true

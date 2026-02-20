@@ -1,6 +1,6 @@
 [package]
 name = "nash-driver"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 description = "Build system and driver for Nash projects"
 homepage.workspace = true
