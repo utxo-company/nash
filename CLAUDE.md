@@ -116,6 +116,35 @@ These same checks run in CI on every push/PR.
 
 We are porting Elm's full error hierarchy from `Reporting/Error/Syntax.hs`. Error types are nested (Module contains Decl, Decl contains Expr, etc.) to enable Elm-quality error messages.
 
+## Versioning & Changesets
+
+We use [**sampo**](https://github.com/bruits/sampo/blob/main/crates/sampo/README.md) for changelog and version management:
+- Each crate has its own independent version (no shared `version.workspace = true`)
+- When making notable changes, create a changeset with `sampo add`
+- Sampo handles granular per-crate version bumps based on what actually changed
+- CI runs the Sampo GitHub Action to automate release PRs and publishing
+
+```bash
+# single crate
+sampo add -p nash-parse -m "Add support for let expressions"
+
+# multiple crates in one changeset
+sampo add -p nash-parse -p nash-region -m "Add position tracking to let expressions"
+```
+
+Since `sampo add` requires interactive bump level selection, Claude should write changeset files directly to `.sampo/changesets/` instead:
+
+```markdown
+---
+cargo/nash-parse: minor
+cargo/nash-region: patch
+---
+
+Add position tracking to let expressions.
+```
+
+Use a short descriptive filename like `.sampo/changesets/let-expr-positions.md`.
+
 ## Code Style
 
 - Recursive descent parser (not parser combinators)
