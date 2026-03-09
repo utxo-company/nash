@@ -4,7 +4,7 @@ members = ["cargo:."]
 # Config for 'dist'
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.30.3"
+cargo-dist-version = "0.31.0"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
@@ -18,7 +18,7 @@ targets = [
   "x86_64-pc-windows-msvc"
 ]
 # A GitHub repo to push Homebrew formulas to
-tap = "nash-script/homebrew-tap"
+tap = "utxo-company/homebrew-tap"
 formula = "nash"
 # A namespace to use when publishing this package to the npm registry
 npm-scope = "@nash-script"
