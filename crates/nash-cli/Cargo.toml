@@ -23,8 +23,10 @@ futures.workspace = true
 miette.workspace = true
 nash-config = { path = "../nash-config", version = "0.3.0" }
 nash-driver = { path = "../nash-driver", version = "0.1.1" }
+nash-language-server = { path = "../nash-language-server", version = "0.1.0" }
 octocrab.workspace = true
 tar.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-std"] }
+tokio-util = { version = "0.7.18", features = ["compat"] }
 xz2.workspace = true
 zip.workspace = true

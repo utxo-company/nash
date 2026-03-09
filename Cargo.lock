@@ -1540,9 +1540,11 @@ dependencies = [
  "miette",
  "nash-config",
  "nash-driver",
+ "nash-language-server",
  "octocrab",
  "tar",
  "tokio",
+ "tokio-util",
  "xz2",
  "zip",
 ]
@@ -1589,8 +1591,6 @@ name = "nash-language-server"
 version = "0.1.0"
 dependencies = [
  "futures",
- "tokio",
- "tokio-util",
  "tower-lsp-server",
 ]
 
