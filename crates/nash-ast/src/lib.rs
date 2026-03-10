@@ -290,7 +290,7 @@ pub enum Type<'a> {
 
 #[derive(Debug)]
 pub enum AliasType<'a> {
-    Holey(&'a Located<Type<'a>>),
+    Open(&'a Located<Type<'a>>),
     Filled(&'a Located<Type<'a>>),
 }
 

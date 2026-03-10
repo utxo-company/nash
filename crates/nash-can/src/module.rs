@@ -1,8 +1,9 @@
 use bumpalo::Bump;
 use nash_ast::{
-    Alias as CanAlias, Associativity as CanAssociativity, Binop as CanBinop, Ctor as CanCtor,
-    CtorOpts, Decls, Export, Exports, FieldType as CanFieldType, Module as CanModule, ModuleName,
-    PackageName, Precedence as CanPrecedence, Type as CanType, Union as CanUnion,
+    Alias as CanAlias, AliasArgument as CanAliasArgument, AliasType as CanAliasType,
+    Associativity as CanAssociativity, Binop as CanBinop, Ctor as CanCtor, CtorOpts, Decls, Export,
+    Exports, FieldType as CanFieldType, Module as CanModule, ModuleName, PackageName,
+    Precedence as CanPrecedence, QualifiedName, Type as CanType, Union as CanUnion,
 };
 use nash_region::{Located, Region};
 use nash_source::{
@@ -47,9 +48,10 @@ pub fn canonicalize_module<'a>(
     module: &SourceModule<'a>,
 ) -> Result<CanModule<'a>, Error> {
     let header = canonicalize_header(bump, context, module)?;
+    let home = header.name;
     let decls = canonicalize_decls(bump, module.values);
-    let unions = canonicalize_unions(bump, module.unions);
-    let aliases = canonicalize_aliases(bump, module.aliases);
+    let unions = canonicalize_unions(bump, home, module, module.unions);
+    let aliases = canonicalize_aliases(bump, home, module, module.aliases);
     let binops = canonicalize_binops(bump, module.binops);
 
     if !module.imports.is_empty() {
@@ -57,7 +59,7 @@ pub fn canonicalize_module<'a>(
     }
 
     Ok(CanModule {
-        name: header.name,
+        name: home,
         exports: header.exports,
         docs: module.docs,
         decls,
@@ -80,22 +82,29 @@ fn canonicalize_decls<'a>(
 
 fn canonicalize_unions<'a>(
     bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
     unions: &'a [&'a Located<SourceUnion<'a>>],
 ) -> &'a [&'a Located<CanUnion<'a>>] {
     bump.alloc_slice_fill_iter(unions.iter().copied().map(|union| {
         let union = bump.alloc(Located::at(
             union.region,
-            canonicalize_union(bump, &union.value),
+            canonicalize_union(bump, home, module, &union.value),
         ));
         let union: &'a Located<CanUnion<'a>> = union;
         union
     }))
 }
 
-fn canonicalize_union<'a>(bump: &'a Bump, union: &SourceUnion<'a>) -> CanUnion<'a> {
+fn canonicalize_union<'a>(
+    bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
+    union: &SourceUnion<'a>,
+) -> CanUnion<'a> {
     let parameters =
         bump.alloc_slice_fill_iter(union.arguments.iter().copied().map(|arg| arg.value));
-    let ctors = canonicalize_ctors(bump, union.ctors);
+    let ctors = canonicalize_ctors(bump, home, module, union.ctors);
     let alternatives = union
         .ctors
         .len()
@@ -118,6 +127,8 @@ fn canonicalize_union<'a>(bump: &'a Bump, union: &SourceUnion<'a>) -> CanUnion<'
 
 fn canonicalize_ctors<'a>(
     bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
     ctors: &'a [&'a SourceCtor<'a>],
 ) -> &'a [&'a CanCtor<'a>] {
     bump.alloc_slice_fill_iter(ctors.iter().copied().enumerate().map(|(index, ctor)| {
@@ -133,7 +144,7 @@ fn canonicalize_ctors<'a>(
                 ctor.arguments
                     .iter()
                     .copied()
-                    .map(|argument| canonicalize_type(bump, argument)),
+                    .map(|argument| canonicalize_type(bump, home, module, argument)),
             ),
         });
         let ctor: &'a CanCtor<'a> = ctor;
@@ -143,57 +154,84 @@ fn canonicalize_ctors<'a>(
 
 fn canonicalize_aliases<'a>(
     bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
     aliases: &'a [&'a Located<SourceAlias<'a>>],
 ) -> &'a [&'a Located<CanAlias<'a>>] {
     bump.alloc_slice_fill_iter(aliases.iter().copied().map(|alias| {
         let alias = bump.alloc(Located::at(
             alias.region,
-            canonicalize_alias(bump, &alias.value),
+            canonicalize_alias(bump, home, module, &alias.value),
         ));
         let alias: &'a Located<CanAlias<'a>> = alias;
         alias
     }))
 }
 
-fn canonicalize_alias<'a>(bump: &'a Bump, alias: &SourceAlias<'a>) -> CanAlias<'a> {
+fn canonicalize_alias<'a>(
+    bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
+    alias: &SourceAlias<'a>,
+) -> CanAlias<'a> {
     let parameters =
         bump.alloc_slice_fill_iter(alias.arguments.iter().copied().map(|arg| arg.value));
 
     CanAlias {
         name: alias.name,
         parameters,
-        typ: canonicalize_type(bump, alias.typ),
+        typ: canonicalize_type(bump, home, module, alias.typ),
     }
 }
 
 fn canonicalize_type<'a>(
     bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
     typ: &'a Located<SourceType<'a>>,
 ) -> &'a Located<CanType<'a>> {
     let typ = bump.alloc(Located::at(
         typ.region,
-        canonicalize_type_value(bump, &typ.value),
+        canonicalize_type_value(bump, home, module, &typ.value),
     ));
     let typ: &'a Located<CanType<'a>> = typ;
     typ
 }
 
-fn canonicalize_type_value<'a>(bump: &'a Bump, typ: &SourceType<'a>) -> CanType<'a> {
+fn canonicalize_type_value<'a>(
+    bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
+    typ: &SourceType<'a>,
+) -> CanType<'a> {
     match typ {
         SourceType::Lambda { from, to } => CanType::Lambda {
-            from: canonicalize_type(bump, from),
-            to: canonicalize_type(bump, to),
+            from: canonicalize_type(bump, home, module, from),
+            to: canonicalize_type(bump, home, module, to),
         },
         SourceType::Var(name) => CanType::Var(name),
-        SourceType::Type { name, .. } => todo!("canonicalize unqualified named type `{name}`"),
-        SourceType::TypeQual { module, name, .. } => {
-            todo!("canonicalize qualified named type `{module}.{name}`")
+        SourceType::Type { name, args, .. } => {
+            canonicalize_named_type(bump, home, module, name, args)
+        }
+        SourceType::TypeQual {
+            module: type_module,
+            name,
+            args,
+            ..
+        } => {
+            if *type_module == home.name {
+                canonicalize_named_type(bump, home, module, name, args)
+            } else {
+                todo!("canonicalize qualified named type `{type_module}.{name}`")
+            }
         }
         SourceType::Record { fields, ext } => CanType::Record {
             fields: bump.alloc_slice_fill_iter(fields.iter().copied().enumerate().map(
                 |(index, field)| {
                     canonicalize_field_type(
                         bump,
+                        home,
+                        module,
                         index.try_into().expect("record field index exceeds u16"),
                         field,
                     )
@@ -207,26 +245,112 @@ fn canonicalize_type_value<'a>(bump: &'a Bump, typ: &SourceType<'a>) -> CanType<
             second,
             rest,
         } => CanType::Tuple {
-            first: canonicalize_type(bump, first),
-            second: canonicalize_type(bump, second),
+            first: canonicalize_type(bump, home, module, first),
+            second: canonicalize_type(bump, home, module, second),
             rest: bump.alloc_slice_fill_iter(
                 rest.iter()
                     .copied()
-                    .map(|item| canonicalize_type(bump, item)),
+                    .map(|item| canonicalize_type(bump, home, module, item)),
             ),
         },
     }
 }
 
+fn canonicalize_named_type<'a>(
+    bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
+    name: &'a str,
+    args: &'a [&'a Located<SourceType<'a>>],
+) -> CanType<'a> {
+    if let Some(alias) = find_alias(module.aliases, name) {
+        ensure_type_arity("alias", name, alias.arguments.len(), args.len());
+        let arguments = canonicalize_alias_arguments(bump, home, module, alias.arguments, args);
+        let target = CanAliasType::Open(canonicalize_type(bump, home, module, alias.typ));
+
+        CanType::Alias {
+            reference: QualifiedName { home, name },
+            arguments,
+            target,
+        }
+    } else if let Some(union) = find_union(module.unions, name) {
+        ensure_type_arity("union", name, union.arguments.len(), args.len());
+        let args = canonicalize_type_arguments(bump, home, module, args);
+
+        CanType::Named {
+            reference: QualifiedName { home, name },
+            args,
+        }
+    } else {
+        todo!("canonicalize named type `{name}`")
+    }
+}
+
+fn canonicalize_alias_arguments<'a>(
+    bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
+    parameters: &'a [&'a Located<&'a str>],
+    args: &'a [&'a Located<SourceType<'a>>],
+) -> &'a [CanAliasArgument<'a>] {
+    bump.alloc_slice_fill_iter(parameters.iter().copied().zip(args.iter().copied()).map(
+        |(parameter, arg)| CanAliasArgument {
+            name: parameter.value,
+            typ: canonicalize_type(bump, home, module, arg),
+        },
+    ))
+}
+
+fn canonicalize_type_arguments<'a>(
+    bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
+    args: &'a [&'a Located<SourceType<'a>>],
+) -> &'a [&'a Located<CanType<'a>>] {
+    bump.alloc_slice_fill_iter(
+        args.iter()
+            .copied()
+            .map(|arg| canonicalize_type(bump, home, module, arg)),
+    )
+}
+
+fn ensure_type_arity(kind: &str, name: &str, expected: usize, actual: usize) {
+    if expected != actual {
+        todo!("validate {kind} type arity for `{name}`: expected {expected}, got {actual}");
+    }
+}
+
+fn find_alias<'a>(
+    aliases: &'a [&'a Located<SourceAlias<'a>>],
+    name: &str,
+) -> Option<&'a SourceAlias<'a>> {
+    aliases
+        .iter()
+        .find(|alias| alias.value.name.value == name)
+        .map(|alias| &alias.value)
+}
+
+fn find_union<'a>(
+    unions: &'a [&'a Located<SourceUnion<'a>>],
+    name: &str,
+) -> Option<&'a SourceUnion<'a>> {
+    unions
+        .iter()
+        .find(|union| union.value.name.value == name)
+        .map(|union| &union.value)
+}
+
 fn canonicalize_field_type<'a>(
     bump: &'a Bump,
+    home: ModuleName<'a>,
+    module: &SourceModule<'a>,
     index: u16,
     field: &SourceFieldType<'a>,
 ) -> CanFieldType<'a> {
     CanFieldType {
         index,
         field: field.field.value,
-        typ: canonicalize_type(bump, field.typ),
+        typ: canonicalize_type(bump, home, module, field.typ),
     }
 }
 
@@ -469,6 +593,40 @@ mod tests {
             module Main exposing (Pair, Maybe(..))
 
             type alias Pair a b = (a, b)
+
+            type Maybe a
+                = Just a
+                | Nothing
+        "#
+        );
+    }
+
+    #[test]
+    fn module_shell_with_local_named_types() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (Pair, WrappedPair, WrappedMaybe, Maybe(..))
+
+            type alias Pair a b = (a, b)
+
+            type alias WrappedPair a b = Pair a b
+
+            type alias WrappedMaybe a = Maybe a
+
+            type Maybe a
+                = Just a
+                | Nothing
+        "#
+        );
+    }
+
+    #[test]
+    fn module_shell_with_self_qualified_named_types() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (Maybe(..), Wrapped)
+
+            type alias Wrapped a = Main.Maybe a
 
             type Maybe a
                 = Just a
