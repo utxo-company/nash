@@ -432,6 +432,9 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Imports (`import.rs`)
 - [x] Full module parsing (`module.rs`)
 
+### Canonicalization
+- [x] Module header canonicalization (`crates/nash-can/src/module.rs`)
+
 ---
 
 ## Grammar (EBNF)

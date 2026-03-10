@@ -1,0 +1,22 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (..)\n"
+---
+Header {
+    name: ModuleName {
+        package: None,
+        name: "Main",
+    },
+    exports: Everything(
+        Region {
+            start: Position {
+                line: 1,
+                column: 22,
+            },
+            end: Position {
+                line: 1,
+                column: 26,
+            },
+        },
+    ),
+}

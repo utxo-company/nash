@@ -1,0 +1,34 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Json.Decode exposing (Decoder)\n"
+---
+Header {
+    name: ModuleName {
+        package: Some(
+            PackageName {
+                author: "nash",
+                project: "compiler",
+            },
+        ),
+        name: "Json.Decode",
+    },
+    exports: Explicit(
+        [
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 30,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 37,
+                    },
+                },
+                value: UnionClosed(
+                    "Decoder",
+                ),
+            },
+        ],
+    ),
+}

@@ -1,0 +1,74 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (main, Model, Msg(..), (+))\n"
+---
+Header {
+    name: ModuleName {
+        package: None,
+        name: "Main",
+    },
+    exports: Explicit(
+        [
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 23,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 27,
+                    },
+                },
+                value: Value(
+                    "main",
+                ),
+            },
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 29,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 34,
+                    },
+                },
+                value: UnionClosed(
+                    "Model",
+                ),
+            },
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 36,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 42,
+                    },
+                },
+                value: UnionOpen(
+                    "Msg",
+                ),
+            },
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 45,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 48,
+                    },
+                },
+                value: Binop(
+                    "+",
+                ),
+            },
+        ],
+    ),
+}

@@ -8,3 +8,12 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+bumpalo.workspace = true
+nash-ast = { path = "../nash-ast", version = "0.1.0" }
+nash-region = { path = "../nash-region", version = "0.2.0" }
+nash-source = { path = "../nash-source", version = "0.2.0" }
+
+[dev-dependencies]
+indoc.workspace = true
+insta.workspace = true
+nash-parse = { path = "../nash-parse", version = "0.2.0" }
