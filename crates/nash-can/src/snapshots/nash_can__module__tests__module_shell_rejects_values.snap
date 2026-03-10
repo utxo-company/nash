@@ -1,0 +1,5 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (..)\n\nmain = 42\n"
+---
+UnsupportedValues

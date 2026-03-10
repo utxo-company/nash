@@ -1,0 +1,66 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing ((|>))\n\ninfix left 6 (|>) = apR\n"
+---
+Module {
+    name: ModuleName {
+        package: None,
+        name: "Main",
+    },
+    exports: Explicit(
+        [
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
+                        column: 23,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 27,
+                    },
+                },
+                value: Binop(
+                    "|>",
+                ),
+            },
+        ],
+    ),
+    docs: NoDocs(
+        Region {
+            start: Position {
+                line: 1,
+                column: 1,
+            },
+            end: Position {
+                line: 4,
+                column: 1,
+            },
+        },
+    ),
+    decls: Empty,
+    unions: [],
+    aliases: [],
+    binops: [
+        Located {
+            region: Region {
+                start: Position {
+                    line: 3,
+                    column: 1,
+                },
+                end: Position {
+                    line: 4,
+                    column: 1,
+                },
+            },
+            value: Binop {
+                symbol: "|>",
+                associativity: Left,
+                precedence: Precedence(
+                    6,
+                ),
+                function: "apR",
+            },
+        },
+    ],
+}

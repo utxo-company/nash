@@ -51,7 +51,7 @@ pub enum Decls<'a> {
         following: &'a [&'a Def<'a>],
         next: &'a Decls<'a>,
     },
-    SaveTheEnvironment,
+    Empty,
 }
 
 #[derive(Debug)]
