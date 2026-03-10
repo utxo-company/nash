@@ -2,9 +2,6 @@ use nash_region::{Located, Region};
 
 pub use nash_source::{Associativity, Docs, Precedence};
 
-pub type Expr<'a> = Located<Expr_<'a>>;
-pub type Pattern<'a> = Located<Pattern_<'a>>;
-pub type Type<'a> = Located<Type_<'a>>;
 pub type FreeVars<'a> = &'a [&'a str];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -61,22 +58,22 @@ pub enum Decls<'a> {
 pub enum Def<'a> {
     Def {
         name: &'a Located<&'a str>,
-        args: &'a [&'a Pattern<'a>],
-        body: &'a Expr<'a>,
+        args: &'a [&'a Located<Pattern<'a>>],
+        body: &'a Located<Expr<'a>>,
     },
     TypedDef {
         name: &'a Located<&'a str>,
         free_vars: FreeVars<'a>,
         args: &'a [TypedPattern<'a>],
-        body: &'a Expr<'a>,
-        typ: &'a Type<'a>,
+        body: &'a Located<Expr<'a>>,
+        typ: &'a Located<Type<'a>>,
     },
 }
 
 #[derive(Debug)]
 pub struct TypedPattern<'a> {
-    pub pattern: &'a Pattern<'a>,
-    pub typ: &'a Type<'a>,
+    pub pattern: &'a Located<Pattern<'a>>,
+    pub typ: &'a Located<Type<'a>>,
 }
 
 #[derive(Debug)]
@@ -93,14 +90,14 @@ pub struct Ctor<'a> {
     pub name: &'a str,
     pub index: u16,
     pub arity: u16,
-    pub arguments: &'a [&'a Type<'a>],
+    pub arguments: &'a [&'a Located<Type<'a>>],
 }
 
 #[derive(Debug)]
 pub struct Alias<'a> {
     pub name: &'a Located<&'a str>,
     pub parameters: &'a [&'a str],
-    pub typ: &'a Type<'a>,
+    pub typ: &'a Located<Type<'a>>,
 }
 
 #[derive(Debug)]
@@ -119,7 +116,7 @@ pub enum CtorOpts {
 }
 
 #[derive(Debug)]
-pub enum Expr_<'a> {
+pub enum Expr<'a> {
     VarLocal(&'a str),
     VarTopLevel(QualifiedName<'a>),
     VarConstructor {
@@ -135,106 +132,106 @@ pub enum Expr_<'a> {
     },
     Str(&'a str),
     Int(i128),
-    List(&'a [&'a Expr<'a>]),
-    Negate(&'a Expr<'a>),
+    List(&'a [&'a Located<Expr<'a>>]),
+    Negate(&'a Located<Expr<'a>>),
     Binop {
         symbol: &'a str,
         reference: QualifiedName<'a>,
         annotation: &'a Annotation<'a>,
-        left: &'a Expr<'a>,
-        right: &'a Expr<'a>,
+        left: &'a Located<Expr<'a>>,
+        right: &'a Located<Expr<'a>>,
     },
     Lambda {
-        parameters: &'a [&'a Pattern<'a>],
-        body: &'a Expr<'a>,
+        parameters: &'a [&'a Located<Pattern<'a>>],
+        body: &'a Located<Expr<'a>>,
     },
     Call {
-        function: &'a Expr<'a>,
-        arguments: &'a [&'a Expr<'a>],
+        function: &'a Located<Expr<'a>>,
+        arguments: &'a [&'a Located<Expr<'a>>],
     },
     If {
         branches: &'a [IfBranch<'a>],
-        final_else: &'a Expr<'a>,
+        final_else: &'a Located<Expr<'a>>,
     },
     Let {
         definition: &'a Def<'a>,
-        body: &'a Expr<'a>,
+        body: &'a Located<Expr<'a>>,
     },
     LetRec {
         definitions: &'a [&'a Def<'a>],
-        body: &'a Expr<'a>,
+        body: &'a Located<Expr<'a>>,
     },
     LetDestruct {
-        pattern: &'a Pattern<'a>,
-        value: &'a Expr<'a>,
-        body: &'a Expr<'a>,
+        pattern: &'a Located<Pattern<'a>>,
+        value: &'a Located<Expr<'a>>,
+        body: &'a Located<Expr<'a>>,
     },
     Case {
-        scrutinee: &'a Expr<'a>,
+        scrutinee: &'a Located<Expr<'a>>,
         branches: &'a [CaseBranch<'a>],
     },
     Accessor(&'a str),
     Access {
-        record: &'a Expr<'a>,
+        record: &'a Located<Expr<'a>>,
         field: &'a Located<&'a str>,
     },
     Update {
         record: &'a str,
-        base: &'a Expr<'a>,
+        base: &'a Located<Expr<'a>>,
         fields: &'a [FieldUpdate<'a>],
     },
     Record(&'a [FieldValue<'a>]),
     Unit,
     Tuple {
-        first: &'a Expr<'a>,
-        second: &'a Expr<'a>,
-        rest: &'a [&'a Expr<'a>],
+        first: &'a Located<Expr<'a>>,
+        second: &'a Located<Expr<'a>>,
+        rest: &'a [&'a Located<Expr<'a>>],
     },
 }
 
 #[derive(Debug)]
 pub struct IfBranch<'a> {
-    pub condition: &'a Expr<'a>,
-    pub then_branch: &'a Expr<'a>,
+    pub condition: &'a Located<Expr<'a>>,
+    pub then_branch: &'a Located<Expr<'a>>,
 }
 
 #[derive(Debug)]
 pub struct CaseBranch<'a> {
-    pub pattern: &'a Pattern<'a>,
-    pub body: &'a Expr<'a>,
+    pub pattern: &'a Located<Pattern<'a>>,
+    pub body: &'a Located<Expr<'a>>,
 }
 
 #[derive(Debug)]
 pub struct FieldUpdate<'a> {
     pub region: Region,
-    pub value: &'a Expr<'a>,
+    pub value: &'a Located<Expr<'a>>,
 }
 
 #[derive(Debug)]
 pub struct FieldValue<'a> {
     pub field: &'a Located<&'a str>,
-    pub value: &'a Expr<'a>,
+    pub value: &'a Located<Expr<'a>>,
 }
 
 #[derive(Debug)]
-pub enum Pattern_<'a> {
+pub enum Pattern<'a> {
     Anything,
     Var(&'a str),
     Record(&'a [&'a str]),
     Alias {
-        pattern: &'a Pattern<'a>,
+        pattern: &'a Located<Pattern<'a>>,
         name: &'a str,
     },
     Unit,
     Tuple {
-        first: &'a Pattern<'a>,
-        second: &'a Pattern<'a>,
-        rest: &'a [&'a Pattern<'a>],
+        first: &'a Located<Pattern<'a>>,
+        second: &'a Located<Pattern<'a>>,
+        rest: &'a [&'a Located<Pattern<'a>>],
     },
-    List(&'a [&'a Pattern<'a>]),
+    List(&'a [&'a Located<Pattern<'a>>]),
     Cons {
-        head: &'a Pattern<'a>,
-        tail: &'a Pattern<'a>,
+        head: &'a Located<Pattern<'a>>,
+        tail: &'a Located<Pattern<'a>>,
     },
     Constructor(PatternCtor<'a>),
     Str(&'a str),
@@ -253,26 +250,26 @@ pub struct PatternCtor<'a> {
 #[derive(Debug)]
 pub struct PatternCtorArg<'a> {
     pub index: u16,
-    pub typ: &'a Type<'a>,
-    pub pattern: &'a Pattern<'a>,
+    pub typ: &'a Located<Type<'a>>,
+    pub pattern: &'a Located<Pattern<'a>>,
 }
 
 #[derive(Debug)]
 pub struct Annotation<'a> {
     pub free_vars: FreeVars<'a>,
-    pub typ: &'a Type<'a>,
+    pub typ: &'a Located<Type<'a>>,
 }
 
 #[derive(Debug)]
-pub enum Type_<'a> {
+pub enum Type<'a> {
     Lambda {
-        from: &'a Type<'a>,
-        to: &'a Type<'a>,
+        from: &'a Located<Type<'a>>,
+        to: &'a Located<Type<'a>>,
     },
     Var(&'a str),
     Named {
         reference: QualifiedName<'a>,
-        args: &'a [&'a Type<'a>],
+        args: &'a [&'a Located<Type<'a>>],
     },
     Record {
         fields: &'a [FieldType<'a>],
@@ -280,9 +277,9 @@ pub enum Type_<'a> {
     },
     Unit,
     Tuple {
-        first: &'a Type<'a>,
-        second: &'a Type<'a>,
-        rest: &'a [&'a Type<'a>],
+        first: &'a Located<Type<'a>>,
+        second: &'a Located<Type<'a>>,
+        rest: &'a [&'a Located<Type<'a>>],
     },
     Alias {
         reference: QualifiedName<'a>,
@@ -293,21 +290,21 @@ pub enum Type_<'a> {
 
 #[derive(Debug)]
 pub enum AliasType<'a> {
-    Holey(&'a Type<'a>),
-    Filled(&'a Type<'a>),
+    Holey(&'a Located<Type<'a>>),
+    Filled(&'a Located<Type<'a>>),
 }
 
 #[derive(Debug)]
 pub struct AliasArgument<'a> {
     pub name: &'a str,
-    pub typ: &'a Type<'a>,
+    pub typ: &'a Located<Type<'a>>,
 }
 
 #[derive(Debug)]
 pub struct FieldType<'a> {
     pub index: u16,
     pub field: &'a str,
-    pub typ: &'a Type<'a>,
+    pub typ: &'a Located<Type<'a>>,
 }
 
 #[derive(Debug)]
