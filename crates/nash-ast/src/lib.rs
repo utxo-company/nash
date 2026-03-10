@@ -1,14 +1,326 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use nash_region::{Located, Region};
+
+pub use nash_source::{Associativity, Docs, Precedence};
+
+pub type Expr<'a> = Located<Expr_<'a>>;
+pub type Pattern<'a> = Located<Pattern_<'a>>;
+pub type Type<'a> = Located<Type_<'a>>;
+pub type FreeVars<'a> = &'a [&'a str];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PackageName<'a> {
+    pub author: &'a str,
+    pub project: &'a str,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ModuleName<'a> {
+    pub package: Option<PackageName<'a>>,
+    pub name: &'a str,
+}
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct QualifiedName<'a> {
+    pub home: ModuleName<'a>,
+    pub name: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ConstructorName<'a> {
+    pub home: ModuleName<'a>,
+    pub union: &'a str,
+    pub name: &'a str,
+}
+
+#[derive(Debug)]
+pub struct Module<'a> {
+    pub name: ModuleName<'a>,
+    pub exports: Exports<'a>,
+    pub docs: &'a Docs<'a>,
+    pub decls: &'a Decls<'a>,
+    pub unions: &'a [&'a Located<Union<'a>>],
+    pub aliases: &'a [&'a Located<Alias<'a>>],
+    pub binops: &'a [&'a Located<Binop<'a>>],
+}
+
+#[derive(Debug)]
+pub enum Decls<'a> {
+    Declare {
+        definition: &'a Def<'a>,
+        next: &'a Decls<'a>,
+    },
+    DeclareRec {
+        definition: &'a Def<'a>,
+        following: &'a [&'a Def<'a>],
+        next: &'a Decls<'a>,
+    },
+    SaveTheEnvironment,
+}
+
+#[derive(Debug)]
+pub enum Def<'a> {
+    Def {
+        name: &'a Located<&'a str>,
+        args: &'a [&'a Pattern<'a>],
+        body: &'a Expr<'a>,
+    },
+    TypedDef {
+        name: &'a Located<&'a str>,
+        free_vars: FreeVars<'a>,
+        args: &'a [TypedPattern<'a>],
+        body: &'a Expr<'a>,
+        typ: &'a Type<'a>,
+    },
+}
+
+#[derive(Debug)]
+pub struct TypedPattern<'a> {
+    pub pattern: &'a Pattern<'a>,
+    pub typ: &'a Type<'a>,
+}
+
+#[derive(Debug)]
+pub struct Union<'a> {
+    pub name: &'a Located<&'a str>,
+    pub parameters: &'a [&'a str],
+    pub ctors: &'a [&'a Ctor<'a>],
+    pub alternatives: u16,
+    pub options: CtorOpts,
+}
+
+#[derive(Debug)]
+pub struct Ctor<'a> {
+    pub name: &'a str,
+    pub index: u16,
+    pub arity: u16,
+    pub arguments: &'a [&'a Type<'a>],
+}
+
+#[derive(Debug)]
+pub struct Alias<'a> {
+    pub name: &'a Located<&'a str>,
+    pub parameters: &'a [&'a str],
+    pub typ: &'a Type<'a>,
+}
+
+#[derive(Debug)]
+pub struct Binop<'a> {
+    pub symbol: &'a str,
+    pub associativity: Associativity,
+    pub precedence: Precedence,
+    pub function: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CtorOpts {
+    Normal,
+    Enum,
+    Unbox,
+}
+
+#[derive(Debug)]
+pub enum Expr_<'a> {
+    VarLocal(&'a str),
+    VarTopLevel(QualifiedName<'a>),
+    VarConstructor {
+        options: CtorOpts,
+        reference: ConstructorName<'a>,
+        index: u16,
+        annotation: &'a Annotation<'a>,
+    },
+    VarOperator {
+        symbol: &'a str,
+        reference: QualifiedName<'a>,
+        annotation: &'a Annotation<'a>,
+    },
+    Str(&'a str),
+    Int(i128),
+    List(&'a [&'a Expr<'a>]),
+    Negate(&'a Expr<'a>),
+    Binop {
+        symbol: &'a str,
+        reference: QualifiedName<'a>,
+        annotation: &'a Annotation<'a>,
+        left: &'a Expr<'a>,
+        right: &'a Expr<'a>,
+    },
+    Lambda {
+        parameters: &'a [&'a Pattern<'a>],
+        body: &'a Expr<'a>,
+    },
+    Call {
+        function: &'a Expr<'a>,
+        arguments: &'a [&'a Expr<'a>],
+    },
+    If {
+        branches: &'a [IfBranch<'a>],
+        final_else: &'a Expr<'a>,
+    },
+    Let {
+        definition: &'a Def<'a>,
+        body: &'a Expr<'a>,
+    },
+    LetRec {
+        definitions: &'a [&'a Def<'a>],
+        body: &'a Expr<'a>,
+    },
+    LetDestruct {
+        pattern: &'a Pattern<'a>,
+        value: &'a Expr<'a>,
+        body: &'a Expr<'a>,
+    },
+    Case {
+        scrutinee: &'a Expr<'a>,
+        branches: &'a [CaseBranch<'a>],
+    },
+    Accessor(&'a str),
+    Access {
+        record: &'a Expr<'a>,
+        field: &'a Located<&'a str>,
+    },
+    Update {
+        record: &'a str,
+        base: &'a Expr<'a>,
+        fields: &'a [FieldUpdate<'a>],
+    },
+    Record(&'a [FieldValue<'a>]),
+    Unit,
+    Tuple {
+        first: &'a Expr<'a>,
+        second: &'a Expr<'a>,
+        rest: &'a [&'a Expr<'a>],
+    },
+}
+
+#[derive(Debug)]
+pub struct IfBranch<'a> {
+    pub condition: &'a Expr<'a>,
+    pub then_branch: &'a Expr<'a>,
+}
+
+#[derive(Debug)]
+pub struct CaseBranch<'a> {
+    pub pattern: &'a Pattern<'a>,
+    pub body: &'a Expr<'a>,
+}
+
+#[derive(Debug)]
+pub struct FieldUpdate<'a> {
+    pub region: Region,
+    pub value: &'a Expr<'a>,
+}
+
+#[derive(Debug)]
+pub struct FieldValue<'a> {
+    pub field: &'a Located<&'a str>,
+    pub value: &'a Expr<'a>,
+}
+
+#[derive(Debug)]
+pub enum Pattern_<'a> {
+    Anything,
+    Var(&'a str),
+    Record(&'a [&'a str]),
+    Alias {
+        pattern: &'a Pattern<'a>,
+        name: &'a str,
+    },
+    Unit,
+    Tuple {
+        first: &'a Pattern<'a>,
+        second: &'a Pattern<'a>,
+        rest: &'a [&'a Pattern<'a>],
+    },
+    List(&'a [&'a Pattern<'a>]),
+    Cons {
+        head: &'a Pattern<'a>,
+        tail: &'a Pattern<'a>,
+    },
+    Constructor(PatternCtor<'a>),
+    Str(&'a str),
+    Int(i128),
+}
+
+#[derive(Debug)]
+pub struct PatternCtor<'a> {
+    pub reference: ConstructorName<'a>,
+    pub index: u16,
+    pub arguments: &'a [PatternCtorArg<'a>],
+    pub options: CtorOpts,
+    pub alternatives: u16,
+}
+
+#[derive(Debug)]
+pub struct PatternCtorArg<'a> {
+    pub index: u16,
+    pub typ: &'a Type<'a>,
+    pub pattern: &'a Pattern<'a>,
+}
+
+#[derive(Debug)]
+pub struct Annotation<'a> {
+    pub free_vars: FreeVars<'a>,
+    pub typ: &'a Type<'a>,
+}
+
+#[derive(Debug)]
+pub enum Type_<'a> {
+    Lambda {
+        from: &'a Type<'a>,
+        to: &'a Type<'a>,
+    },
+    Var(&'a str),
+    Named {
+        reference: QualifiedName<'a>,
+        args: &'a [&'a Type<'a>],
+    },
+    Record {
+        fields: &'a [FieldType<'a>],
+        ext: Option<&'a str>,
+    },
+    Unit,
+    Tuple {
+        first: &'a Type<'a>,
+        second: &'a Type<'a>,
+        rest: &'a [&'a Type<'a>],
+    },
+    Alias {
+        reference: QualifiedName<'a>,
+        arguments: &'a [AliasArgument<'a>],
+        target: AliasType<'a>,
+    },
+}
+
+#[derive(Debug)]
+pub enum AliasType<'a> {
+    Holey(&'a Type<'a>),
+    Filled(&'a Type<'a>),
+}
+
+#[derive(Debug)]
+pub struct AliasArgument<'a> {
+    pub name: &'a str,
+    pub typ: &'a Type<'a>,
+}
+
+#[derive(Debug)]
+pub struct FieldType<'a> {
+    pub index: u16,
+    pub field: &'a str,
+    pub typ: &'a Type<'a>,
+}
+
+#[derive(Debug)]
+pub enum Exports<'a> {
+    Everything(Region),
+    Explicit(&'a [&'a Located<Export<'a>>]),
+}
+
+#[derive(Debug)]
+pub enum Export<'a> {
+    Value(&'a str),
+    Binop(&'a str),
+    Alias(&'a str),
+    UnionOpen(&'a str),
+    UnionClosed(&'a str),
 }
