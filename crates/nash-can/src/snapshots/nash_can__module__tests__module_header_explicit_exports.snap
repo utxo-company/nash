@@ -1,6 +1,6 @@
 ---
 source: crates/nash-can/src/module.rs
-description: "Code:\n\nmodule Main exposing (main, Model, Msg(..), (+))\n"
+description: "Code:\n\nmodule Main exposing (main, (+))\n"
 ---
 Header {
     name: ModuleName {
@@ -32,37 +32,7 @@ Header {
                     },
                     end: Position {
                         line: 1,
-                        column: 34,
-                    },
-                },
-                value: UnionClosed(
-                    "Model",
-                ),
-            },
-            Located {
-                region: Region {
-                    start: Position {
-                        line: 1,
-                        column: 36,
-                    },
-                    end: Position {
-                        line: 1,
-                        column: 42,
-                    },
-                },
-                value: UnionOpen(
-                    "Msg",
-                ),
-            },
-            Located {
-                region: Region {
-                    start: Position {
-                        line: 1,
-                        column: 45,
-                    },
-                    end: Position {
-                        line: 1,
-                        column: 48,
+                        column: 32,
                     },
                 },
                 value: Binop(

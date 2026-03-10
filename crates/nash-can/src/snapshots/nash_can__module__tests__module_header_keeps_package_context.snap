@@ -1,6 +1,6 @@
 ---
 source: crates/nash-can/src/module.rs
-description: "Code:\n\nmodule Json.Decode exposing (Decoder)\n"
+description: "Code:\n\nmodule Json.Decode exposing (decodeString)\n"
 ---
 Header {
     name: ModuleName {
@@ -22,11 +22,11 @@ Header {
                     },
                     end: Position {
                         line: 1,
-                        column: 37,
+                        column: 42,
                     },
                 },
-                value: UnionClosed(
-                    "Decoder",
+                value: Value(
+                    "decodeString",
                 ),
             },
         ],
