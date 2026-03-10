@@ -28,5 +28,6 @@ octocrab.workspace = true
 tar.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-std"] }
 tokio-util = { version = "0.7.18", features = ["compat"] }
+tower-lsp-server.workspace = true
 xz2.workspace = true
 zip.workspace = true

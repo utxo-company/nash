@@ -1545,6 +1545,7 @@ dependencies = [
  "tar",
  "tokio",
  "tokio-util",
+ "tower-lsp-server",
  "xz2",
  "zip",
 ]
@@ -1590,7 +1591,6 @@ dependencies = [
 name = "nash-language-server"
 version = "0.1.0"
 dependencies = [
- "futures",
  "tower-lsp-server",
 ]
 
