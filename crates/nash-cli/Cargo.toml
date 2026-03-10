@@ -1,6 +1,6 @@
 [package]
 name = "nash-cli"
-version = "0.1.3"
+version = "0.2.0"
 edition.workspace = true
 description = "The Nash programming language"
 homepage.workspace = true
@@ -23,7 +23,7 @@ futures.workspace = true
 miette.workspace = true
 nash-config = { path = "../nash-config", version = "0.3.0" }
 nash-driver = { path = "../nash-driver", version = "0.1.1" }
-nash-language-server = { path = "../nash-language-server", version = "0.1.0" }
+nash-language-server = { path = "../nash-language-server", version = "0.2.0" }
 octocrab.workspace = true
 tar.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-std"] }
