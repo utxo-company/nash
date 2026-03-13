@@ -1,0 +1,19 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (Wrapped)\n\nimport Maybe exposing (..)\n\nimport Option exposing (..)\n\ntype alias Wrapped a = Maybe a\n"
+---
+AmbiguousImportedType {
+    region: Region {
+        start: Position {
+            line: 7,
+            column: 24,
+        },
+        end: Position {
+            line: 7,
+            column: 31,
+        },
+    },
+    name: "Maybe",
+    first_module: "Maybe",
+    second_module: "Option",
+}

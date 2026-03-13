@@ -1,0 +1,17 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (Missing)\n"
+---
+UnresolvedExportedUpperName {
+    region: Region {
+        start: Position {
+            line: 1,
+            column: 23,
+        },
+        end: Position {
+            line: 1,
+            column: 30,
+        },
+    },
+    name: "Missing",
+}

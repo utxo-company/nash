@@ -1,0 +1,17 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (Wrapped)\n\nimport Result\n\ntype alias Wrapped e a = Result.Result e a\n"
+---
+MissingImportedInterface {
+    region: Region {
+        start: Position {
+            line: 3,
+            column: 8,
+        },
+        end: Position {
+            line: 3,
+            column: 14,
+        },
+    },
+    module: "Result",
+}

@@ -1,0 +1,18 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (Wrapped)\n\ntype alias Wrapped = Missing.Maybe\n"
+---
+UnresolvedQualifiedNamedType {
+    region: Region {
+        start: Position {
+            line: 3,
+            column: 22,
+        },
+        end: Position {
+            line: 3,
+            column: 35,
+        },
+    },
+    module: "Missing",
+    name: "Maybe",
+}

@@ -15,6 +15,7 @@ use nash_source::{
     Value as SourceValue,
 };
 
+use crate::error::TypeKind;
 use crate::{Error, Interface, InterfaceAlias, InterfaceUnion};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -41,11 +42,24 @@ enum ResolvedType<'a> {
     },
 }
 
+fn try_alloc_slice_fill_iter<'a, T, E>(
+    bump: &'a Bump,
+    iter: impl IntoIterator<Item = Result<T, E>>,
+) -> Result<&'a [T], E> {
+    let mut items = Vec::new();
+
+    for item in iter {
+        items.push(item?);
+    }
+
+    Ok(bump.alloc_slice_fill_iter(items))
+}
+
 fn canonicalize_header<'a>(
     bump: &'a Bump,
     context: Context<'a>,
     module: &SourceModule<'a>,
-) -> Result<Header<'a>, Error> {
+) -> Result<Header<'a>, Error<'a>> {
     let name = module.name.ok_or(Error::MissingModuleHeader)?;
 
     Ok(Header {
@@ -53,7 +67,7 @@ fn canonicalize_header<'a>(
             package: context.package,
             name: name.value,
         },
-        exports: canonicalize_exports(bump, module),
+        exports: canonicalize_exports(bump, module)?,
     })
 }
 
@@ -61,12 +75,12 @@ pub fn canonicalize<'a>(
     bump: &'a Bump,
     context: Context<'a>,
     module: &SourceModule<'a>,
-) -> Result<CanModule<'a>, Error> {
+) -> Result<CanModule<'a>, Error<'a>> {
     let header = canonicalize_header(bump, context, module)?;
     let home = header.name;
     let decls = canonicalize_decls(bump, module.values);
-    let unions = canonicalize_unions(bump, context, home, module, module.unions);
-    let aliases = canonicalize_aliases(bump, context, home, module, module.aliases);
+    let unions = canonicalize_unions(bump, context, home, module, module.unions)?;
+    let aliases = canonicalize_aliases(bump, context, home, module, module.aliases)?;
     let binops = canonicalize_binops(bump, module.binops);
 
     Ok(CanModule {
@@ -97,15 +111,19 @@ fn canonicalize_unions<'a>(
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
     unions: &'a [&'a Located<SourceUnion<'a>>],
-) -> &'a [&'a Located<CanUnion<'a>>] {
-    bump.alloc_slice_fill_iter(unions.iter().copied().map(|union| {
-        let union = bump.alloc(Located::at(
-            union.region,
-            canonicalize_union(bump, context, home, module, &union.value),
-        ));
-        let union: &'a Located<CanUnion<'a>> = union;
-        union
-    }))
+) -> Result<&'a [&'a Located<CanUnion<'a>>], Error<'a>> {
+    try_alloc_slice_fill_iter(
+        bump,
+        unions.iter().copied().map(|union| {
+            let union = bump.alloc(Located::at(
+                union.region,
+                canonicalize_union(bump, context, home, module, &union.value)?,
+            ));
+            let union: &'a Located<CanUnion<'a>> = union;
+
+            Ok(union)
+        }),
+    )
 }
 
 fn canonicalize_union<'a>(
@@ -114,10 +132,10 @@ fn canonicalize_union<'a>(
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
     union: &SourceUnion<'a>,
-) -> CanUnion<'a> {
+) -> Result<CanUnion<'a>, Error<'a>> {
     let parameters =
         bump.alloc_slice_fill_iter(union.arguments.iter().copied().map(|arg| arg.value));
-    let ctors = canonicalize_ctors(bump, context, home, module, union.ctors);
+    let ctors = canonicalize_ctors(bump, context, home, module, union.ctors)?;
     let alternatives = union
         .ctors
         .len()
@@ -129,13 +147,13 @@ fn canonicalize_union<'a>(
         CtorOpts::Normal
     };
 
-    CanUnion {
+    Ok(CanUnion {
         name: union.name,
         parameters,
         ctors,
         alternatives,
         options,
-    }
+    })
 }
 
 fn canonicalize_ctors<'a>(
@@ -144,26 +162,27 @@ fn canonicalize_ctors<'a>(
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
     ctors: &'a [&'a SourceCtor<'a>],
-) -> &'a [&'a CanCtor<'a>] {
-    bump.alloc_slice_fill_iter(ctors.iter().copied().enumerate().map(|(index, ctor)| {
-        let ctor = bump.alloc(CanCtor {
-            name: ctor.name.value,
-            index: index.try_into().expect("constructor index exceeds u16"),
-            arity: ctor
-                .arguments
-                .len()
-                .try_into()
-                .expect("constructor arity exceeds u16"),
-            arguments: bump.alloc_slice_fill_iter(
-                ctor.arguments
-                    .iter()
-                    .copied()
-                    .map(|argument| canonicalize_type(bump, context, home, module, argument)),
-            ),
-        });
-        let ctor: &'a CanCtor<'a> = ctor;
-        ctor
-    }))
+) -> Result<&'a [&'a CanCtor<'a>], Error<'a>> {
+    try_alloc_slice_fill_iter(
+        bump,
+        ctors.iter().copied().enumerate().map(|(index, ctor)| {
+            let arguments =
+                canonicalize_type_arguments(bump, context, home, module, ctor.arguments)?;
+            let ctor = bump.alloc(CanCtor {
+                name: ctor.name.value,
+                index: index.try_into().expect("constructor index exceeds u16"),
+                arity: ctor
+                    .arguments
+                    .len()
+                    .try_into()
+                    .expect("constructor arity exceeds u16"),
+                arguments,
+            });
+            let ctor: &'a CanCtor<'a> = ctor;
+
+            Ok(ctor)
+        }),
+    )
 }
 
 fn canonicalize_aliases<'a>(
@@ -172,15 +191,19 @@ fn canonicalize_aliases<'a>(
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
     aliases: &'a [&'a Located<SourceAlias<'a>>],
-) -> &'a [&'a Located<CanAlias<'a>>] {
-    bump.alloc_slice_fill_iter(aliases.iter().copied().map(|alias| {
-        let alias = bump.alloc(Located::at(
-            alias.region,
-            canonicalize_alias(bump, context, home, module, &alias.value),
-        ));
-        let alias: &'a Located<CanAlias<'a>> = alias;
-        alias
-    }))
+) -> Result<&'a [&'a Located<CanAlias<'a>>], Error<'a>> {
+    try_alloc_slice_fill_iter(
+        bump,
+        aliases.iter().copied().map(|alias| {
+            let alias = bump.alloc(Located::at(
+                alias.region,
+                canonicalize_alias(bump, context, home, module, &alias.value)?,
+            ));
+            let alias: &'a Located<CanAlias<'a>> = alias;
+
+            Ok(alias)
+        }),
+    )
 }
 
 fn canonicalize_alias<'a>(
@@ -189,15 +212,15 @@ fn canonicalize_alias<'a>(
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
     alias: &SourceAlias<'a>,
-) -> CanAlias<'a> {
+) -> Result<CanAlias<'a>, Error<'a>> {
     let parameters =
         bump.alloc_slice_fill_iter(alias.arguments.iter().copied().map(|arg| arg.value));
 
-    CanAlias {
+    Ok(CanAlias {
         name: alias.name,
         parameters,
-        typ: canonicalize_type(bump, context, home, module, alias.typ),
-    }
+        typ: canonicalize_type(bump, context, home, module, alias.typ)?,
+    })
 }
 
 fn canonicalize_type<'a>(
@@ -206,13 +229,14 @@ fn canonicalize_type<'a>(
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
     typ: &'a Located<SourceType<'a>>,
-) -> &'a Located<CanType<'a>> {
+) -> Result<&'a Located<CanType<'a>>, Error<'a>> {
     let typ = bump.alloc(Located::at(
         typ.region,
-        canonicalize_type_value(bump, context, home, module, &typ.value),
+        canonicalize_type_value(bump, context, home, module, typ.region, &typ.value)?,
     ));
     let typ: &'a Located<CanType<'a>> = typ;
-    typ
+
+    Ok(typ)
 }
 
 fn canonicalize_type_value<'a>(
@@ -220,16 +244,17 @@ fn canonicalize_type_value<'a>(
     context: Context<'a>,
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
+    region: Region,
     typ: &SourceType<'a>,
-) -> CanType<'a> {
-    match typ {
+) -> Result<CanType<'a>, Error<'a>> {
+    Ok(match typ {
         SourceType::Lambda { from, to } => CanType::Lambda {
-            from: canonicalize_type(bump, context, home, module, from),
-            to: canonicalize_type(bump, context, home, module, to),
+            from: canonicalize_type(bump, context, home, module, from)?,
+            to: canonicalize_type(bump, context, home, module, to)?,
         },
         SourceType::Var(name) => CanType::Var(name),
         SourceType::Type { name, args, .. } => {
-            canonicalize_named_type(bump, context, home, module, name, args)
+            canonicalize_named_type(bump, context, home, module, region, name, args)?
         }
         SourceType::TypeQual {
             module: type_module,
@@ -238,22 +263,24 @@ fn canonicalize_type_value<'a>(
             ..
         } => {
             if *type_module == home.name {
-                canonicalize_named_type(bump, context, home, module, name, args)
+                canonicalize_named_type(bump, context, home, module, region, name, args)?
             } else {
                 canonicalize_qualified_named_type(
                     bump,
                     context,
                     home,
                     module,
+                    region,
                     type_module,
                     name,
                     args,
-                )
+                )?
             }
         }
         SourceType::Record { fields, ext } => CanType::Record {
-            fields: bump.alloc_slice_fill_iter(fields.iter().copied().enumerate().map(
-                |(index, field)| {
+            fields: try_alloc_slice_fill_iter(
+                bump,
+                fields.iter().copied().enumerate().map(|(index, field)| {
                     canonicalize_field_type(
                         bump,
                         context,
@@ -262,8 +289,8 @@ fn canonicalize_type_value<'a>(
                         index.try_into().expect("record field index exceeds u16"),
                         field,
                     )
-                },
-            )),
+                }),
+            )?,
             ext: ext.map(|name| name.value),
         },
         SourceType::Unit => CanType::Unit,
@@ -272,15 +299,11 @@ fn canonicalize_type_value<'a>(
             second,
             rest,
         } => CanType::Tuple {
-            first: canonicalize_type(bump, context, home, module, first),
-            second: canonicalize_type(bump, context, home, module, second),
-            rest: bump.alloc_slice_fill_iter(
-                rest.iter()
-                    .copied()
-                    .map(|item| canonicalize_type(bump, context, home, module, item)),
-            ),
+            first: canonicalize_type(bump, context, home, module, first)?,
+            second: canonicalize_type(bump, context, home, module, second)?,
+            rest: canonicalize_type_arguments(bump, context, home, module, rest)?,
         },
-    }
+    })
 }
 
 fn canonicalize_named_type<'a>(
@@ -288,32 +311,45 @@ fn canonicalize_named_type<'a>(
     context: Context<'a>,
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
+    region: Region,
     name: &'a str,
     args: &'a [&'a Located<SourceType<'a>>],
-) -> CanType<'a> {
+) -> Result<CanType<'a>, Error<'a>> {
     if let Some(alias) = find_alias(module.aliases, name) {
-        ensure_type_arity("alias", name, alias.arguments.len(), args.len());
+        ensure_type_arity(
+            region,
+            TypeKind::Alias,
+            name,
+            alias.arguments.len(),
+            args.len(),
+        )?;
         let arguments =
-            canonicalize_alias_arguments(bump, context, home, module, alias.arguments, args);
-        let target = CanAliasType::Open(canonicalize_type(bump, context, home, module, alias.typ));
+            canonicalize_alias_arguments(bump, context, home, module, alias.arguments, args)?;
+        let target = CanAliasType::Open(canonicalize_type(bump, context, home, module, alias.typ)?);
 
-        CanType::Alias {
+        Ok(CanType::Alias {
             reference: QualifiedName { home, name },
             arguments,
             target,
-        }
+        })
     } else if let Some(union) = find_union(module.unions, name) {
-        ensure_type_arity("union", name, union.arguments.len(), args.len());
-        let args = canonicalize_type_arguments(bump, context, home, module, args);
+        ensure_type_arity(
+            region,
+            TypeKind::Union,
+            name,
+            union.arguments.len(),
+            args.len(),
+        )?;
+        let args = canonicalize_type_arguments(bump, context, home, module, args)?;
 
-        CanType::Named {
+        Ok(CanType::Named {
             reference: QualifiedName { home, name },
             args,
-        }
-    } else if let Some(resolved) = find_imported_named_type(context, module, name) {
-        canonicalize_resolved_type(bump, context, home, module, name, args, resolved)
+        })
+    } else if let Some(resolved) = find_imported_named_type(context, module, region, name)? {
+        canonicalize_resolved_type(bump, context, home, module, region, name, args, resolved)
     } else {
-        todo!("canonicalize named type `{name}`")
+        Err(Error::UnresolvedNamedType { region, name })
     }
 }
 
@@ -322,14 +358,20 @@ fn canonicalize_qualified_named_type<'a>(
     context: Context<'a>,
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
-    type_module: &str,
+    region: Region,
+    type_module: &'a str,
     name: &'a str,
     args: &'a [&'a Located<SourceType<'a>>],
-) -> CanType<'a> {
-    let resolved = find_imported_qualified_named_type(context, module, type_module, name)
-        .unwrap_or_else(|| todo!("canonicalize qualified named type `{type_module}.{name}`"));
+) -> Result<CanType<'a>, Error<'a>> {
+    let resolved = find_imported_qualified_named_type(context, module, type_module, name)?.ok_or(
+        Error::UnresolvedQualifiedNamedType {
+            region,
+            module: type_module,
+            name,
+        },
+    )?;
 
-    canonicalize_resolved_type(bump, context, home, module, name, args, resolved)
+    canonicalize_resolved_type(bump, context, home, module, region, name, args, resolved)
 }
 
 fn canonicalize_resolved_type<'a>(
@@ -337,16 +379,23 @@ fn canonicalize_resolved_type<'a>(
     context: Context<'a>,
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
+    region: Region,
     name: &'a str,
     args: &'a [&'a Located<SourceType<'a>>],
     resolved: ResolvedType<'a>,
-) -> CanType<'a> {
+) -> Result<CanType<'a>, Error<'a>> {
     match resolved {
         ResolvedType::Alias {
             home: imported_home,
             alias,
         } => {
-            ensure_type_arity("alias", name, alias.parameters.len(), args.len());
+            ensure_type_arity(
+                region,
+                TypeKind::Alias,
+                name,
+                alias.parameters.len(),
+                args.len(),
+            )?;
             let arguments = canonicalize_interface_alias_arguments(
                 bump,
                 context,
@@ -354,31 +403,37 @@ fn canonicalize_resolved_type<'a>(
                 module,
                 alias.parameters,
                 args,
-            );
+            )?;
 
-            CanType::Alias {
+            Ok(CanType::Alias {
                 reference: QualifiedName {
                     home: imported_home,
                     name: alias.name,
                 },
                 arguments,
                 target: CanAliasType::Open(alias.typ),
-            }
+            })
         }
         ResolvedType::Union {
             home: imported_home,
             union,
         } => {
-            ensure_type_arity("union", name, union.parameters.len(), args.len());
-            let args = canonicalize_type_arguments(bump, context, home, module, args);
+            ensure_type_arity(
+                region,
+                TypeKind::Union,
+                name,
+                union.parameters.len(),
+                args.len(),
+            )?;
+            let args = canonicalize_type_arguments(bump, context, home, module, args)?;
 
-            CanType::Named {
+            Ok(CanType::Named {
                 reference: QualifiedName {
                     home: imported_home,
                     name: union.name,
                 },
                 args,
-            }
+            })
         }
     }
 }
@@ -390,13 +445,20 @@ fn canonicalize_alias_arguments<'a>(
     module: &SourceModule<'a>,
     parameters: &'a [&'a Located<&'a str>],
     args: &'a [&'a Located<SourceType<'a>>],
-) -> &'a [CanAliasArgument<'a>] {
-    bump.alloc_slice_fill_iter(parameters.iter().copied().zip(args.iter().copied()).map(
-        |(parameter, arg)| CanAliasArgument {
-            name: parameter.value,
-            typ: canonicalize_type(bump, context, home, module, arg),
-        },
-    ))
+) -> Result<&'a [CanAliasArgument<'a>], Error<'a>> {
+    try_alloc_slice_fill_iter(
+        bump,
+        parameters
+            .iter()
+            .copied()
+            .zip(args.iter().copied())
+            .map(|(parameter, arg)| {
+                Ok(CanAliasArgument {
+                    name: parameter.value,
+                    typ: canonicalize_type(bump, context, home, module, arg)?,
+                })
+            }),
+    )
 }
 
 fn canonicalize_interface_alias_arguments<'a>(
@@ -406,13 +468,20 @@ fn canonicalize_interface_alias_arguments<'a>(
     module: &SourceModule<'a>,
     parameters: &'a [&'a str],
     args: &'a [&'a Located<SourceType<'a>>],
-) -> &'a [CanAliasArgument<'a>] {
-    bump.alloc_slice_fill_iter(parameters.iter().copied().zip(args.iter().copied()).map(
-        |(parameter, arg)| CanAliasArgument {
-            name: parameter,
-            typ: canonicalize_type(bump, context, home, module, arg),
-        },
-    ))
+) -> Result<&'a [CanAliasArgument<'a>], Error<'a>> {
+    try_alloc_slice_fill_iter(
+        bump,
+        parameters
+            .iter()
+            .copied()
+            .zip(args.iter().copied())
+            .map(|(parameter, arg)| {
+                Ok(CanAliasArgument {
+                    name: parameter,
+                    typ: canonicalize_type(bump, context, home, module, arg)?,
+                })
+            }),
+    )
 }
 
 fn canonicalize_type_arguments<'a>(
@@ -421,17 +490,32 @@ fn canonicalize_type_arguments<'a>(
     home: ModuleName<'a>,
     module: &SourceModule<'a>,
     args: &'a [&'a Located<SourceType<'a>>],
-) -> &'a [&'a Located<CanType<'a>>] {
-    bump.alloc_slice_fill_iter(
+) -> Result<&'a [&'a Located<CanType<'a>>], Error<'a>> {
+    try_alloc_slice_fill_iter(
+        bump,
         args.iter()
             .copied()
             .map(|arg| canonicalize_type(bump, context, home, module, arg)),
     )
 }
 
-fn ensure_type_arity(kind: &str, name: &str, expected: usize, actual: usize) {
-    if expected != actual {
-        todo!("validate {kind} type arity for `{name}`: expected {expected}, got {actual}");
+fn ensure_type_arity<'a>(
+    region: Region,
+    kind: TypeKind,
+    name: &'a str,
+    expected: usize,
+    actual: usize,
+) -> Result<(), Error<'a>> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(Error::BadTypeArity {
+            region,
+            kind,
+            name,
+            expected,
+            actual,
+        })
     }
 }
 
@@ -458,28 +542,44 @@ fn find_union<'a>(
 fn find_imported_named_type<'a>(
     context: Context<'a>,
     module: &SourceModule<'a>,
+    region: Region,
     name: &'a str,
-) -> Option<ResolvedType<'a>> {
-    let mut resolved = None;
+) -> Result<Option<ResolvedType<'a>>, Error<'a>> {
+    let mut explicit_resolved = None;
+    let mut open_resolved = None;
 
     for import in module.imports {
         if !import_exposes_type(import, name) {
             continue;
         }
 
-        let interface = find_interface(context, import.import.value)
-            .unwrap_or_else(|| todo!("load imported interface `{}`", import.import.value));
+        let interface = imported_interface(context, import)?;
+        let Some(candidate) = resolve_interface_type(interface, name) else {
+            continue;
+        };
 
-        if let Some(candidate) = resolve_interface_type(interface, name) {
-            if resolved.is_some() {
-                todo!("resolve ambiguous imported named type `{name}`");
+        match import.exposing {
+            Exposing::Open => {
+                if let Some((_, first_module)) = open_resolved {
+                    return Err(Error::AmbiguousImportedType {
+                        region,
+                        name,
+                        first_module,
+                        second_module: import.import.value,
+                    });
+                }
+
+                open_resolved = Some((candidate, import.import.value));
             }
-
-            resolved = Some(candidate);
+            Exposing::Explicit(_) => {
+                if explicit_resolved.is_none() {
+                    explicit_resolved = Some(candidate);
+                }
+            }
         }
     }
 
-    resolved
+    Ok(explicit_resolved.or_else(|| open_resolved.map(|(candidate, _)| candidate)))
 }
 
 fn find_imported_qualified_named_type<'a>(
@@ -487,16 +587,28 @@ fn find_imported_qualified_named_type<'a>(
     module: &SourceModule<'a>,
     prefix: &str,
     name: &'a str,
-) -> Option<ResolvedType<'a>> {
-    let import = module
+) -> Result<Option<ResolvedType<'a>>, Error<'a>> {
+    let Some(import) = module
         .imports
         .iter()
         .copied()
-        .find(|import| import_prefix(import) == prefix)?;
-    let interface = find_interface(context, import.import.value)
-        .unwrap_or_else(|| todo!("load imported interface `{}`", import.import.value));
+        .find(|import| import_prefix(import) == prefix)
+    else {
+        return Ok(None);
+    };
+    let interface = imported_interface(context, import)?;
 
-    resolve_interface_type(interface, name)
+    Ok(resolve_interface_type(interface, name))
+}
+
+fn imported_interface<'a>(
+    context: Context<'a>,
+    import: &'a SourceImport<'a>,
+) -> Result<&'a Interface<'a>, Error<'a>> {
+    find_interface(context, import.import.value).ok_or(Error::MissingImportedInterface {
+        region: import.import.region,
+        module: import.import.value,
+    })
 }
 
 fn find_interface<'a>(context: Context<'a>, module_name: &str) -> Option<&'a Interface<'a>> {
@@ -547,26 +659,30 @@ fn canonicalize_field_type<'a>(
     module: &SourceModule<'a>,
     index: u16,
     field: &SourceFieldType<'a>,
-) -> CanFieldType<'a> {
-    CanFieldType {
+) -> Result<CanFieldType<'a>, Error<'a>> {
+    Ok(CanFieldType {
         index,
         field: field.field.value,
-        typ: canonicalize_type(bump, context, home, module, field.typ),
-    }
+        typ: canonicalize_type(bump, context, home, module, field.typ)?,
+    })
 }
 
-fn canonicalize_exports<'a>(bump: &'a Bump, module: &SourceModule<'a>) -> Exports<'a> {
+fn canonicalize_exports<'a>(
+    bump: &'a Bump,
+    module: &SourceModule<'a>,
+) -> Result<Exports<'a>, Error<'a>> {
     match module.exports.value {
-        Exposing::Open => Exports::Everything(module.exports.region),
+        Exposing::Open => Ok(Exports::Everything(module.exports.region)),
         Exposing::Explicit(exposed) => {
-            let exposed: &'a [&'a Located<Export<'a>>] = bump.alloc_slice_fill_iter(
+            let exposed: &'a [&'a Located<Export<'a>>] = try_alloc_slice_fill_iter(
+                bump,
                 exposed
                     .iter()
                     .copied()
                     .map(|exposed| canonicalize_exposed(bump, module, exposed)),
-            );
+            )?;
 
-            Exports::Explicit(exposed)
+            Ok(Exports::Explicit(exposed))
         }
     }
 }
@@ -606,15 +722,18 @@ fn canonicalize_exposed<'a>(
     bump: &'a Bump,
     module: &SourceModule<'a>,
     exposed: &Exposed<'a>,
-) -> &'a Located<Export<'a>> {
-    bump.alloc(Located::at(
+) -> Result<&'a Located<Export<'a>>, Error<'a>> {
+    Ok(bump.alloc(Located::at(
         exposed_region(exposed),
-        canonicalize_export(module, exposed),
-    ))
+        canonicalize_export(module, exposed)?,
+    )))
 }
 
-fn canonicalize_export<'a>(module: &SourceModule<'a>, exposed: &Exposed<'a>) -> Export<'a> {
-    match exposed {
+fn canonicalize_export<'a>(
+    module: &SourceModule<'a>,
+    exposed: &Exposed<'a>,
+) -> Result<Export<'a>, Error<'a>> {
+    Ok(match exposed {
         Exposed::Lower(name) => Export::Value(name.value),
         Exposed::Upper { name, privacy } => {
             if module
@@ -633,14 +752,14 @@ fn canonicalize_export<'a>(module: &SourceModule<'a>, exposed: &Exposed<'a>) -> 
                     Privacy::Private => Export::UnionClosed(name.value),
                 }
             } else {
-                todo!(
-                    "resolve exported upper name `{}` against local/imported declarations",
-                    name.value
-                )
+                return Err(Error::UnresolvedExportedUpperName {
+                    region: exposed_region(exposed),
+                    name: name.value,
+                });
             }
         }
         Exposed::Operator { op, .. } => Export::Binop(op),
-    }
+    })
 }
 
 fn exposed_region(exposed: &Exposed<'_>) -> Region {
@@ -717,6 +836,25 @@ mod tests {
             let module = parser.module().expect("expected successful parse");
             let result = canonicalize(&bump, Context::default(), &module)
                 .expect("expected successful canonicalization");
+
+            insta::with_settings!({
+                description => format!("Code:\n\n{}", input),
+                omit_expression => true,
+            }, {
+                insta::assert_debug_snapshot!(result);
+            });
+        }};
+    }
+
+    macro_rules! assert_module_error_snapshot {
+        ($input:expr) => {{
+            let input = indoc!($input);
+            let bump = Bump::new();
+            let src = bump.alloc_str(input);
+            let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
+            let module = parser.module().expect("expected successful parse");
+            let result = canonicalize(&bump, Context::default(), &module)
+                .expect_err("expected canonicalization error");
 
             insta::with_settings!({
                 description => format!("Code:\n\n{}", input),
@@ -887,6 +1025,104 @@ mod tests {
                 | Nothing
         "#
         );
+    }
+
+    #[test]
+    fn module_shell_reports_unresolved_named_types() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (Wrapped)
+
+            type alias Wrapped = Missing
+        "#
+        );
+    }
+
+    #[test]
+    fn module_shell_reports_unresolved_qualified_named_types() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (Wrapped)
+
+            type alias Wrapped = Missing.Maybe
+        "#
+        );
+    }
+
+    #[test]
+    fn module_shell_reports_missing_imported_interfaces() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (Wrapped)
+
+            import Result
+
+            type alias Wrapped e a = Result.Result e a
+        "#
+        );
+    }
+
+    #[test]
+    fn module_shell_reports_ambiguous_open_imported_types() {
+        let input = indoc!(
+            r#"
+            module Main exposing (Wrapped)
+
+            import Maybe exposing (..)
+
+            import Option exposing (..)
+
+            type alias Wrapped a = Maybe a
+        "#
+        );
+        let bump = Bump::new();
+        let src = bump.alloc_str(input);
+        let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
+        let module = parser.module().expect("expected successful parse");
+        let parameters = bump.alloc_slice_fill_iter(["a"]);
+        let interfaces = BTreeMap::from([
+            (
+                "Maybe",
+                union_interface(&bump, "Maybe", "Maybe", parameters),
+            ),
+            (
+                "Option",
+                union_interface(&bump, "Option", "Maybe", parameters),
+            ),
+        ]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result =
+            canonicalize(&bump, context, &module).expect_err("expected canonicalization error");
+
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn module_shell_reports_bad_type_arity() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (Wrapped, Maybe(..))
+
+            type alias Wrapped = Maybe
+
+            type Maybe a
+                = Just a
+                | Nothing
+        "#
+        );
+    }
+
+    #[test]
+    fn module_header_reports_unresolved_exported_upper_names() {
+        assert_header_error_snapshot!("module Main exposing (Missing)\n");
     }
 
     #[test]
