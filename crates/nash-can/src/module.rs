@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use bumpalo::Bump;
 use nash_ast::{
     Alias as CanAlias, AliasArgument as CanAliasArgument, AliasType as CanAliasType,
@@ -18,11 +20,11 @@ use crate::{Error, Interface, InterfaceAlias, InterfaceUnion};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Context<'a> {
     pub package: Option<PackageName<'a>>,
-    pub interfaces: &'a [Interface<'a>],
+    pub interfaces: Option<&'a BTreeMap<&'a str, Interface<'a>>>,
 }
 
 #[derive(Debug)]
-pub struct Header<'a> {
+struct Header<'a> {
     pub name: ModuleName<'a>,
     pub exports: Exports<'a>,
 }
@@ -39,7 +41,7 @@ enum ResolvedType<'a> {
     },
 }
 
-pub fn canonicalize_header<'a>(
+fn canonicalize_header<'a>(
     bump: &'a Bump,
     context: Context<'a>,
     module: &SourceModule<'a>,
@@ -55,7 +57,7 @@ pub fn canonicalize_header<'a>(
     })
 }
 
-pub fn canonicalize_module<'a>(
+pub fn canonicalize<'a>(
     bump: &'a Bump,
     context: Context<'a>,
     module: &SourceModule<'a>,
@@ -498,10 +500,7 @@ fn find_imported_qualified_named_type<'a>(
 }
 
 fn find_interface<'a>(context: Context<'a>, module_name: &str) -> Option<&'a Interface<'a>> {
-    context
-        .interfaces
-        .iter()
-        .find(|interface| interface.home.name == module_name)
+    context.interfaces?.get(module_name)
 }
 
 fn resolve_interface_type<'a>(
@@ -560,12 +559,12 @@ fn canonicalize_exports<'a>(bump: &'a Bump, module: &SourceModule<'a>) -> Export
     match module.exports.value {
         Exposing::Open => Exports::Everything(module.exports.region),
         Exposing::Explicit(exposed) => {
-            let exposed: &'a [&'a Located<Export<'a>>] =
-                bump.alloc_slice_fill_iter(exposed.iter().copied().map(|exposed| {
-                    let export = bump.alloc(canonicalize_exposed(module, exposed));
-                    let export: &'a Located<Export<'a>> = export;
-                    export
-                }));
+            let exposed: &'a [&'a Located<Export<'a>>] = bump.alloc_slice_fill_iter(
+                exposed
+                    .iter()
+                    .copied()
+                    .map(|exposed| canonicalize_exposed(bump, module, exposed)),
+            );
 
             Exports::Explicit(exposed)
         }
@@ -604,13 +603,14 @@ fn canonicalize_precedence(precedence: &SourcePrecedence) -> CanPrecedence {
 }
 
 fn canonicalize_exposed<'a>(
+    bump: &'a Bump,
     module: &SourceModule<'a>,
     exposed: &Exposed<'a>,
-) -> Located<Export<'a>> {
-    Located::at(
+) -> &'a Located<Export<'a>> {
+    bump.alloc(Located::at(
         exposed_region(exposed),
         canonicalize_export(module, exposed),
-    )
+    ))
 }
 
 fn canonicalize_export<'a>(module: &SourceModule<'a>, exposed: &Exposed<'a>) -> Export<'a> {
@@ -660,12 +660,14 @@ fn exposed_region(exposed: &Exposed<'_>) -> Region {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use bumpalo::Bump;
     use indoc::indoc;
     use nash_ast::{ModuleName, PackageName, Type as CanType};
     use nash_region::{Located, Region};
 
-    use super::{Context, canonicalize_header, canonicalize_module};
+    use super::{Context, canonicalize, canonicalize_header};
     use crate::{Interface, InterfaceAlias, InterfaceUnion};
 
     macro_rules! assert_header_snapshot {
@@ -713,7 +715,7 @@ mod tests {
             let src = bump.alloc_str(input);
             let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
             let module = parser.module().expect("expected successful parse");
-            let result = canonicalize_module(&bump, Context::default(), &module)
+            let result = canonicalize(&bump, Context::default(), &module)
                 .expect("expected successful canonicalization");
 
             insta::with_settings!({
@@ -796,7 +798,7 @@ mod tests {
                 author: "nash",
                 project: "compiler",
             }),
-            interfaces: &[],
+            interfaces: None,
         };
         let result = canonicalize_header(&bump, context, &module)
             .expect("expected successful canonicalization");
@@ -903,13 +905,16 @@ mod tests {
         let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
         let module = parser.module().expect("expected successful parse");
         let parameters = bump.alloc_slice_fill_iter(["a"]);
+        let interfaces = BTreeMap::from([(
+            "Maybe",
+            union_interface(&bump, "Maybe", "Maybe", parameters),
+        )]);
         let context = Context {
             package: None,
-            interfaces: bump
-                .alloc_slice_fill_iter([union_interface(&bump, "Maybe", "Maybe", parameters)]),
+            interfaces: Some(&interfaces),
         };
-        let result = canonicalize_module(&bump, context, &module)
-            .expect("expected successful canonicalization");
+        let result =
+            canonicalize(&bump, context, &module).expect("expected successful canonicalization");
 
         insta::with_settings!({
             description => format!("Code:\n\n{}", input),
@@ -935,13 +940,16 @@ mod tests {
         let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
         let module = parser.module().expect("expected successful parse");
         let parameters = bump.alloc_slice_fill_iter(["e", "a"]);
+        let interfaces = BTreeMap::from([(
+            "Result",
+            union_interface(&bump, "Result", "Result", parameters),
+        )]);
         let context = Context {
             package: None,
-            interfaces: bump
-                .alloc_slice_fill_iter([union_interface(&bump, "Result", "Result", parameters)]),
+            interfaces: Some(&interfaces),
         };
-        let result = canonicalize_module(&bump, context, &module)
-            .expect("expected successful canonicalization");
+        let result =
+            canonicalize(&bump, context, &module).expect("expected successful canonicalization");
 
         insta::with_settings!({
             description => format!("Code:\n\n{}", input),
@@ -967,18 +975,22 @@ mod tests {
         let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
         let module = parser.module().expect("expected successful parse");
         let parameters = bump.alloc_slice_fill_iter(["msg"]);
-        let context = Context {
-            package: None,
-            interfaces: bump.alloc_slice_fill_iter([alias_interface(
+        let interfaces = BTreeMap::from([(
+            "Json.Decode",
+            alias_interface(
                 &bump,
                 "Json.Decode",
                 "Decoder",
                 parameters,
                 var_type(&bump, "msg"),
-            )]),
+            ),
+        )]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
         };
-        let result = canonicalize_module(&bump, context, &module)
-            .expect("expected successful canonicalization");
+        let result =
+            canonicalize(&bump, context, &module).expect("expected successful canonicalization");
 
         insta::with_settings!({
             description => format!("Code:\n\n{}", input),
