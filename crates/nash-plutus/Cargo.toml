@@ -9,15 +9,7 @@ license.workspace = true
 
 [[bench]]
 harness = false
-name = "simple"
-
-[[bench]]
-harness = false
 name = "use_cases"
-
-[[bench]]
-harness = false
-name = "turbo"
 
 [dependencies]
 append-only-vec = "0.1.8"
