@@ -1,6 +1,6 @@
 [package]
 name = "nash-ast"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 description = "Canonical AST for the nash programming language"
 homepage.workspace = true
