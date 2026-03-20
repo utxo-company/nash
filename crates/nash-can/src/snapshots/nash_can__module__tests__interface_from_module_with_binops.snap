@@ -1,0 +1,23 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing ((|>))\n\ninfix left 6 (|>) = apR\n"
+---
+Interface {
+    home: ModuleName {
+        package: None,
+        name: "Main",
+    },
+    values: [],
+    aliases: [],
+    unions: [],
+    binops: [
+        InterfaceBinop {
+            symbol: "|>",
+            associativity: Left,
+            precedence: Precedence(
+                6,
+            ),
+            function: "apR",
+        },
+    ],
+}

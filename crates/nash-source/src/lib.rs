@@ -60,14 +60,14 @@ pub struct Infix<'a> {
     pub name: &'a str,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Associativity {
     Left,
     None,
     Right,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Precedence(pub u16);
 
 #[derive(Debug)]

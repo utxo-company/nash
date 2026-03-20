@@ -150,7 +150,9 @@ fn canonicalize_union<'a>(
         .len()
         .try_into()
         .expect("union alternatives exceed u16");
-    let options = if union.ctors.iter().all(|ctor| ctor.arguments.is_empty()) {
+    let options = if union.ctors.len() == 1 && union.ctors[0].arguments.len() == 1 {
+        CtorOpts::Unbox
+    } else if union.ctors.iter().all(|ctor| ctor.arguments.is_empty()) {
         CtorOpts::Enum
     } else {
         CtorOpts::Normal
@@ -643,23 +645,6 @@ fn canonicalize_field_type<'a>(
     })
 }
 
-#[cfg(test)]
-fn header_exports<'a>(bump: &'a Bump, module: &SourceModule<'a>) -> Result<Exports<'a>, Error<'a>> {
-    match module.exports.value {
-        Exposing::Open => Ok(Exports::Everything(module.exports.region)),
-        Exposing::Explicit(exposed) => {
-            let exposed: &'a [&'a Located<Export<'a>>] = bump.alloc_slice_fill_results(
-                exposed
-                    .iter()
-                    .copied()
-                    .map(|exposed| header_exposed(bump, module, exposed)),
-            )?;
-
-            Ok(Exports::Explicit(exposed))
-        }
-    }
-}
-
 fn canonicalize_exports<'a>(
     bump: &'a Bump,
     module: &SourceModule<'a>,
@@ -677,61 +662,6 @@ fn canonicalize_exports<'a>(
             Ok(Exports::Explicit(exposed))
         }
     }
-}
-
-#[cfg(test)]
-fn header_exposed<'a>(
-    bump: &'a Bump,
-    module: &SourceModule<'a>,
-    exposed: &Exposed<'a>,
-) -> Result<&'a Located<Export<'a>>, Error<'a>> {
-    Ok(bump.alloc(Located::at(
-        exposed_region(exposed),
-        header_export(module, exposed)?,
-    )))
-}
-
-#[cfg(test)]
-fn header_export<'a>(
-    module: &SourceModule<'a>,
-    exposed: &Exposed<'a>,
-) -> Result<Export<'a>, Error<'a>> {
-    Ok(match exposed {
-        Exposed::Lower(name) => Export::Value(name.value),
-        Exposed::Upper { name, privacy } => {
-            if module
-                .unions
-                .iter()
-                .any(|union| union.value.name.value == name.value)
-            {
-                match privacy {
-                    Privacy::Public(_) => Export::UnionOpen(name.value),
-                    Privacy::Private => Export::UnionClosed(name.value),
-                }
-            } else if module
-                .aliases
-                .iter()
-                .any(|alias| alias.value.name.value == name.value)
-            {
-                match privacy {
-                    Privacy::Public(region) => {
-                        return Err(Error::ExportOpenAlias {
-                            region: *region,
-                            name: name.value,
-                        });
-                    }
-                    Privacy::Private => Export::Alias(name.value),
-                }
-            } else {
-                return Err(Error::ExportNotFound {
-                    region: name.region,
-                    kind: VarKind::BadType,
-                    name: name.value,
-                });
-            }
-        }
-        Exposed::Operator { op, .. } => Export::Binop(op),
-    })
 }
 
 fn canonicalize_binops<'a>(
@@ -863,74 +793,14 @@ mod tests {
 
     use bumpalo::Bump;
     use indoc::indoc;
-    use nash_ast::{Exports, ModuleName, PackageName, Type as CanType};
+    use nash_ast::{Ctor as CanCtor, CtorOpts, ModuleName, PackageName, Type as CanType};
     use nash_region::{Located, Region};
 
-    use super::{Context, canonicalize, canonicalize_header, header_exports};
-    use crate::{Interface, InterfaceAlias, InterfaceUnion};
-
-    struct Header<'a> {
-        pub name: ModuleName<'a>,
-        pub exports: Exports<'a>,
-    }
-
-    impl std::fmt::Debug for Header<'_> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("Header")
-                .field("name", &self.name)
-                .field("exports", &self.exports)
-                .finish()
-        }
-    }
-
-    fn canonicalize_header_snapshot<'a>(
-        bump: &'a Bump,
-        context: Context<'a>,
-        module: &nash_source::Module<'a>,
-    ) -> Result<Header<'a>, crate::Error<'a>> {
-        Ok(Header {
-            name: canonicalize_header(context, module)?,
-            exports: header_exports(bump, module)?,
-        })
-    }
-
-    macro_rules! assert_header_snapshot {
-        ($input:expr) => {{
-            let input = indoc!($input);
-            let bump = Bump::new();
-            let src = bump.alloc_str(input);
-            let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
-            let module = parser.module().expect("expected successful parse");
-            let result = canonicalize_header_snapshot(&bump, Context::default(), &module)
-                .expect("expected successful canonicalization");
-
-            insta::with_settings!({
-                description => format!("Code:\n\n{}", input),
-                omit_expression => true,
-            }, {
-                insta::assert_debug_snapshot!(result);
-            });
-        }};
-    }
-
-    macro_rules! assert_header_error_snapshot {
-        ($input:expr) => {{
-            let input = indoc!($input);
-            let bump = Bump::new();
-            let src = bump.alloc_str(input);
-            let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
-            let module = parser.module().expect("expected successful parse");
-            let result = canonicalize_header_snapshot(&bump, Context::default(), &module)
-                .expect_err("expected canonicalization error");
-
-            insta::with_settings!({
-                description => format!("Code:\n\n{}", input),
-                omit_expression => true,
-            }, {
-                insta::assert_debug_snapshot!(result);
-            });
-        }};
-    }
+    use super::{Context, canonicalize};
+    use crate::Interface;
+    use crate::interface::{
+        self, AliasVisibility, InterfaceAlias, InterfaceUnion, UnionVisibility,
+    };
 
     macro_rules! assert_module_snapshot {
         ($input:expr) => {{
@@ -970,6 +840,25 @@ mod tests {
         }};
     }
 
+    macro_rules! assert_interface_snapshot {
+        ($input:expr) => {{
+            let input = indoc!($input);
+            let bump = Bump::new();
+            let src = bump.alloc_str(input);
+            let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
+            let module = parser.module().expect("expected successful parse");
+            let can_module = canonicalize(&bump, Context::default(), &module)
+                .expect("expected successful canonicalization");
+            let result = interface::from_module(&bump, &can_module);
+            insta::with_settings!({
+                description => format!("Code:\n\n{}", input),
+                omit_expression => true,
+            }, {
+                insta::assert_debug_snapshot!(result);
+            });
+        }};
+    }
+
     fn var_type<'a>(bump: &'a Bump, name: &'a str) -> &'a Located<CanType<'a>> {
         bump.alloc(Located::at(Region::zero(), CanType::Var(name)))
     }
@@ -985,11 +874,17 @@ mod tests {
                 package: None,
                 name: module_name,
             },
+            values: &[],
             aliases: bump.alloc_slice_fill_iter(std::iter::empty::<InterfaceAlias<'a>>()),
             unions: bump.alloc_slice_fill_iter([InterfaceUnion {
                 name: union_name,
                 parameters,
+                ctors: &[],
+                alternatives: 0,
+                options: CtorOpts::Normal,
+                visibility: UnionVisibility::Open,
             }]),
+            binops: &[],
         }
     }
 
@@ -1005,54 +900,19 @@ mod tests {
                 package: None,
                 name: module_name,
             },
+            values: &[],
             aliases: bump.alloc_slice_fill_iter([InterfaceAlias {
                 name: alias_name,
                 parameters,
                 typ,
+                visibility: AliasVisibility::Public,
             }]),
             unions: bump.alloc_slice_fill_iter(std::iter::empty::<InterfaceUnion<'a>>()),
+            binops: &[],
         }
     }
 
-    #[test]
-    fn module_header_open_exports() {
-        assert_header_snapshot!("module Main exposing (..)\n");
-    }
-
-    #[test]
-    fn module_header_explicit_exports() {
-        assert_header_snapshot!("module Main exposing (main, (+))\n");
-    }
-
-    #[test]
-    fn module_header_requires_explicit_header() {
-        assert_header_error_snapshot!("main = 42\n");
-    }
-
-    #[test]
-    fn module_header_keeps_package_context() {
-        let input = indoc!("module Json.Decode exposing (decodeString)\n");
-        let bump = Bump::new();
-        let src = bump.alloc_str(input);
-        let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
-        let module = parser.module().expect("expected successful parse");
-        let context = Context {
-            package: Some(PackageName {
-                author: "nash",
-                project: "compiler",
-            }),
-            interfaces: None,
-        };
-        let result = canonicalize_header_snapshot(&bump, context, &module)
-            .expect("expected successful canonicalization");
-
-        insta::with_settings!({
-            description => format!("Code:\n\n{}", input),
-            omit_expression => true,
-        }, {
-            insta::assert_debug_snapshot!(result);
-        });
-    }
+    // === Module tests ===
 
     #[test]
     fn module_shell_header_only() {
@@ -1383,11 +1243,6 @@ mod tests {
     }
 
     #[test]
-    fn module_header_reports_unresolved_exported_upper_names() {
-        assert_header_error_snapshot!("module Main exposing (Missing)\n");
-    }
-
-    #[test]
     fn module_shell_with_imported_exposed_union_types() {
         let input = indoc!(
             r#"
@@ -1496,5 +1351,192 @@ mod tests {
         }, {
             insta::assert_debug_snapshot!(result);
         });
+    }
+
+    // === Converted tests ===
+
+    #[test]
+    fn module_shell_requires_explicit_header() {
+        assert_module_error_snapshot!("main = 42\n");
+    }
+
+    #[test]
+    fn module_shell_keeps_package_context() {
+        let input = indoc!("module Json.Decode exposing (..)\n");
+        let bump = Bump::new();
+        let src = bump.alloc_str(input);
+        let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
+        let module = parser.module().expect("expected successful parse");
+        let context = Context {
+            package: Some(PackageName {
+                author: "nash",
+                project: "compiler",
+            }),
+            interfaces: None,
+        };
+        let result =
+            canonicalize(&bump, context, &module).expect("expected successful canonicalization");
+
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn module_shell_reports_unresolved_exported_upper_names() {
+        assert_module_error_snapshot!("module Main exposing (Missing)\n");
+    }
+
+    // === Interface tests ===
+
+    #[test]
+    fn interface_from_module_empty() {
+        assert_interface_snapshot!("module Main exposing (..)\n");
+    }
+
+    #[test]
+    fn interface_from_module_open_exports() {
+        assert_interface_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Pair a b = (a, b)
+
+            type Maybe a
+                = Just a
+                | Nothing
+        "#
+        );
+    }
+
+    #[test]
+    fn interface_from_module_open_union() {
+        assert_interface_snapshot!(
+            r#"
+            module Main exposing (Bool(..))
+
+            type Bool
+                = True
+                | False
+        "#
+        );
+    }
+
+    #[test]
+    fn interface_from_module_closed_union() {
+        assert_interface_snapshot!(
+            r#"
+            module Main exposing (Bool)
+
+            type Bool
+                = True
+                | False
+        "#
+        );
+    }
+
+    #[test]
+    fn interface_from_module_mixed_visibility() {
+        assert_interface_snapshot!(
+            r#"
+            module Main exposing (PublicAlias)
+
+            type alias PublicAlias a = a
+
+            type alias PrivateAlias a = a
+
+            type PrivateUnion
+                = Foo
+                | Bar
+        "#
+        );
+    }
+
+    #[test]
+    fn interface_from_module_with_binops() {
+        assert_interface_snapshot!(
+            r#"
+            module Main exposing ((|>))
+
+            infix left 6 (|>) = apR
+        "#
+        );
+    }
+
+    // === to_public tests ===
+
+    #[test]
+    fn to_public_union_open_passes_through() {
+        let union = InterfaceUnion {
+            name: "Bool",
+            parameters: &[],
+            ctors: &[],
+            alternatives: 2,
+            options: CtorOpts::Enum,
+            visibility: UnionVisibility::Open,
+        };
+        insta::assert_debug_snapshot!(union.to_public());
+    }
+
+    #[test]
+    fn to_public_union_closed_strips_ctors() {
+        let bump = Bump::new();
+        let ctor: &CanCtor = bump.alloc(CanCtor {
+            name: "True",
+            index: 0,
+            arity: 0,
+            arguments: &[],
+        });
+        let union = InterfaceUnion {
+            name: "Bool",
+            parameters: &[],
+            ctors: bump.alloc_slice_fill_iter([ctor]),
+            alternatives: 2,
+            options: CtorOpts::Enum,
+            visibility: UnionVisibility::Closed,
+        };
+        insta::assert_debug_snapshot!(union.to_public());
+    }
+
+    #[test]
+    fn to_public_union_private_returns_none() {
+        let union = InterfaceUnion {
+            name: "Internal",
+            parameters: &[],
+            ctors: &[],
+            alternatives: 0,
+            options: CtorOpts::Normal,
+            visibility: UnionVisibility::Private,
+        };
+        insta::assert_debug_snapshot!(union.to_public());
+    }
+
+    #[test]
+    fn to_public_alias_public_passes_through() {
+        let bump = Bump::new();
+        let typ = bump.alloc(Located::at(Region::zero(), CanType::Unit));
+        let alias = InterfaceAlias {
+            name: "Pair",
+            parameters: &["a", "b"],
+            typ,
+            visibility: AliasVisibility::Public,
+        };
+        insta::assert_debug_snapshot!(alias.to_public());
+    }
+
+    #[test]
+    fn to_public_alias_private_returns_none() {
+        let bump = Bump::new();
+        let typ = bump.alloc(Located::at(Region::zero(), CanType::Unit));
+        let alias = InterfaceAlias {
+            name: "Internal",
+            parameters: &[],
+            typ,
+            visibility: AliasVisibility::Private,
+        };
+        insta::assert_debug_snapshot!(alias.to_public());
     }
 }
