@@ -6,6 +6,14 @@ use nash_ast::{
 };
 use nash_region::Located;
 
+/// An exported value with optional type annotation.
+#[derive(Clone, Copy, Debug)]
+pub struct InterfaceValue<'a> {
+    pub name: &'a str,
+    /// None until type inference is implemented.
+    pub annotation: Option<&'a Located<CanType<'a>>>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnionVisibility {
     Open,
@@ -22,7 +30,7 @@ pub enum AliasVisibility {
 #[derive(Clone, Copy, Debug)]
 pub struct Interface<'a> {
     pub home: ModuleName<'a>,
-    pub values: &'a [&'a str],
+    pub values: &'a [InterfaceValue<'a>],
     pub aliases: &'a [InterfaceAlias<'a>],
     pub unions: &'a [InterfaceUnion<'a>],
     pub binops: &'a [InterfaceBinop<'a>],
@@ -87,20 +95,32 @@ impl<'a> InterfaceAlias<'a> {
     }
 }
 
-fn extract_values<'a>(bump: &'a Bump, exports: &Exports<'a>, decls: &Decls<'a>) -> &'a [&'a str] {
+fn extract_values<'a>(
+    bump: &'a Bump,
+    exports: &Exports<'a>,
+    decls: &Decls<'a>,
+) -> &'a [InterfaceValue<'a>] {
     let mut names = Vec::new();
     collect_decl_names(decls, &mut names);
 
-    match exports {
-        Exports::Everything(_) => bump.alloc_slice_fill_iter(names),
-        Exports::Explicit(exports) => {
-            let exported: Vec<&'a str> = names
-                .into_iter()
-                .filter(|name| is_exported_value(exports, name))
-                .collect();
-            bump.alloc_slice_fill_iter(exported)
-        }
-    }
+    let values: Vec<InterfaceValue<'a>> = match exports {
+        Exports::Everything(_) => names
+            .into_iter()
+            .map(|name| InterfaceValue {
+                name,
+                annotation: None,
+            })
+            .collect(),
+        Exports::Explicit(exports) => names
+            .into_iter()
+            .filter(|name| is_exported_value(exports, name))
+            .map(|name| InterfaceValue {
+                name,
+                annotation: None,
+            })
+            .collect(),
+    };
+    bump.alloc_slice_fill_iter(values)
 }
 
 fn collect_decl_names<'a>(decls: &Decls<'a>, names: &mut Vec<&'a str>) {
