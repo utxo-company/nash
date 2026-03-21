@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bumpalo::Bump;
 use nash_ast::{
@@ -15,31 +15,16 @@ use nash_source::{
     Value as SourceValue,
 };
 
-use crate::environment::{self, Env, Info};
+use crate::accumulate;
+use crate::environment::{self, Env, Info, dups};
 use crate::error::{BadArityContext, VarKind};
+use crate::scc;
 use crate::{Error, Interface};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Context<'a> {
     pub package: Option<PackageName<'a>>,
     pub interfaces: Option<&'a BTreeMap<&'a str, Interface<'a>>>,
-}
-
-trait BumpExt<'a> {
-    fn alloc_slice_fill_results<T, E>(
-        &'a self,
-        iter: impl IntoIterator<Item = Result<T, E>>,
-    ) -> Result<&'a [T], E>;
-}
-
-impl<'a> BumpExt<'a> for Bump {
-    fn alloc_slice_fill_results<T, E>(
-        &'a self,
-        iter: impl IntoIterator<Item = Result<T, E>>,
-    ) -> Result<&'a [T], E> {
-        let items = iter.into_iter().collect::<Result<Vec<_>, _>>()?;
-        Ok(self.alloc_slice_fill_iter(items))
-    }
 }
 
 fn canonicalize_header<'a>(
@@ -58,28 +43,21 @@ pub fn canonicalize<'a>(
     bump: &'a Bump,
     context: Context<'a>,
     module: &SourceModule<'a>,
-) -> Result<CanModule<'a>, Error<'a>> {
-    let home = canonicalize_header(context, module)?;
+) -> Result<CanModule<'a>, Vec<Error<'a>>> {
+    let home = canonicalize_header(context, module).map_err(|e| vec![e])?;
 
-    // Phase 1: Build env from imports
     let mut env =
-        environment::foreign::create_initial_env(bump, home, context.interfaces, module.imports)?;
+        environment::foreign::create_initial_env(bump, home, context.interfaces, module.imports)
+            .map_err(|e| vec![e])?;
 
-    // Phase 2: Add local union type names
-    environment::local::add_union_types(&mut env, module.unions);
-
-    // Phase 3: Canonicalize aliases incrementally, adding each to env
+    environment::local::add_union_types(&mut env, module.unions, module.aliases)?;
     let aliases = canonicalize_aliases(bump, &mut env, module.aliases)?;
-
-    // Phase 4: Canonicalize union ctor types (all types now in env)
     let unions = canonicalize_unions(bump, &env, module.aliases, module.unions)?;
 
-    // Phase 5: Add remaining local definitions to env
-    environment::local::add_ctors(&mut env, unions);
-    environment::local::add_vars(&mut env, module.values);
-    environment::local::add_binops(&mut env, module.binops);
+    environment::local::add_ctors(&mut env, unions, aliases)?;
+    environment::local::add_vars(&mut env, module.values)?;
+    environment::local::add_binops(&mut env, module.binops)?;
 
-    // Phase 6: Canonicalize remaining (values still todo)
     let decls = canonicalize_decls(bump, module.values);
     let binops = canonicalize_binops(bump, module.binops);
     let exports = canonicalize_exports(bump, module)?;
@@ -111,21 +89,25 @@ fn canonicalize_unions<'a>(
     env: &Env<'a>,
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     unions: &'a [&'a Located<SourceUnion<'a>>],
-) -> Result<&'a [&'a Located<CanUnion<'a>>], Error<'a>> {
-    bump.alloc_slice_fill_results(unions.iter().copied().map(|union| {
-        Ok(&*bump.alloc(Located::at(
-            union.region,
-            canonicalize_union(bump, env, source_aliases, &union.value)?,
-        )))
-    }))
+) -> Result<&'a [&'a Located<CanUnion<'a>>], Vec<Error<'a>>> {
+    accumulate::try_all_alloc_ref(
+        bump,
+        unions.iter().copied().map(|union| {
+            let can = canonicalize_union(bump, env, source_aliases, union)?;
+            Ok(&*bump.alloc(Located::at(union.region, can)))
+        }),
+    )
 }
 
 fn canonicalize_union<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    union: &SourceUnion<'a>,
-) -> Result<CanUnion<'a>, Error<'a>> {
+    source_union: &'a Located<SourceUnion<'a>>,
+) -> Result<CanUnion<'a>, Vec<Error<'a>>> {
+    check_union_free_vars(bump, source_union)?;
+
+    let union = &source_union.value;
     let parameters =
         bump.alloc_slice_fill_iter(union.arguments.iter().copied().map(|arg| arg.value));
     let ctors = canonicalize_ctors(bump, env, source_aliases, union.ctors)?;
@@ -156,49 +138,266 @@ fn canonicalize_ctors<'a>(
     env: &Env<'a>,
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     ctors: &'a [&'a SourceCtor<'a>],
-) -> Result<&'a [&'a CanCtor<'a>], Error<'a>> {
-    bump.alloc_slice_fill_results(ctors.iter().copied().enumerate().map(|(index, ctor)| {
-        let arguments = canonicalize_type_arguments(bump, env, source_aliases, ctor.arguments)?;
-        Ok(&*bump.alloc(CanCtor {
-            name: ctor.name.value,
-            index: index.try_into().expect("constructor index exceeds u16"),
-            arity: ctor
-                .arguments
-                .len()
-                .try_into()
-                .expect("constructor arity exceeds u16"),
-            arguments,
-        }))
-    }))
+) -> Result<&'a [&'a CanCtor<'a>], Vec<Error<'a>>> {
+    accumulate::try_all_alloc_ref(
+        bump,
+        ctors.iter().copied().enumerate().map(|(index, ctor)| {
+            let arguments = canonicalize_type_arguments(bump, env, source_aliases, ctor.arguments)?;
+            Ok(&*bump.alloc(CanCtor {
+                name: ctor.name.value,
+                index: index.try_into().expect("constructor index exceeds u16"),
+                arity: ctor
+                    .arguments
+                    .len()
+                    .try_into()
+                    .expect("constructor arity exceeds u16"),
+                arguments,
+            }))
+        }),
+    )
 }
 
 fn canonicalize_aliases<'a>(
     bump: &'a Bump,
     env: &mut Env<'a>,
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-) -> Result<&'a [&'a Located<CanAlias<'a>>], Error<'a>> {
-    let mut results = Vec::new();
+) -> Result<&'a [&'a Located<CanAlias<'a>>], Vec<Error<'a>>> {
+    let alias_names: BTreeSet<&str> = source_aliases.iter().map(|a| a.value.name.value).collect();
 
-    for source_alias in source_aliases {
-        let alias = &source_alias.value;
-        let parameters =
-            bump.alloc_slice_fill_iter(alias.arguments.iter().copied().map(|arg| arg.value));
-        let typ = canonicalize_type(bump, env, source_aliases, alias.typ)?;
-
-        let can_alias = CanAlias {
-            name: alias.name,
-            parameters,
-            typ,
-        };
-
-        // Add to env so subsequent aliases can reference it
-        // (also creates RecordCtor if alias body is a plain record)
-        environment::local::add_alias_type(bump, env, &can_alias);
-
-        results.push(&*bump.alloc(Located::at(source_alias.region, can_alias)));
+    let mut edges: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for alias in source_aliases {
+        let mut deps = Vec::new();
+        collect_type_edges(&alias.value.typ.value, &alias_names, &mut deps);
+        edges.insert(alias.value.name.value, deps);
     }
 
-    Ok(bump.alloc_slice_fill_iter(results))
+    let names: Vec<&str> = source_aliases.iter().map(|a| a.value.name.value).collect();
+    let sccs = scc::strongly_connected_components(&names, &edges);
+
+    let mut results: BTreeMap<&str, &Located<CanAlias>> = BTreeMap::new();
+    for component in &sccs {
+        match component {
+            scc::Scc::Acyclic(name) => {
+                let source = source_aliases
+                    .iter()
+                    .find(|a| a.value.name.value == *name)
+                    .unwrap();
+                check_alias_free_vars(bump, source)?;
+                let alias = canonicalize_single_alias(bump, env, source_aliases, source)?;
+                environment::local::add_alias_type(bump, env, &alias.value);
+                results.insert(name, alias);
+            }
+            scc::Scc::Cyclic(cycle_names) => {
+                let first = source_aliases
+                    .iter()
+                    .find(|a| a.value.name.value == cycle_names[0])
+                    .unwrap();
+                return Err(vec![Error::RecursiveAlias {
+                    region: first.value.name.region,
+                    name: cycle_names[0],
+                    args: bump.alloc_slice_fill_iter(first.value.arguments.iter().map(|a| a.value)),
+                    others: bump.alloc_slice_fill_iter(cycle_names[1..].iter().copied()),
+                }]);
+            }
+        }
+    }
+
+    Ok(bump.alloc_slice_fill_iter(
+        source_aliases
+            .iter()
+            .map(|a| *results.get(a.value.name.value).unwrap()),
+    ))
+}
+
+fn canonicalize_single_alias<'a>(
+    bump: &'a Bump,
+    env: &Env<'a>,
+    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
+    source_alias: &'a Located<SourceAlias<'a>>,
+) -> Result<&'a Located<CanAlias<'a>>, Vec<Error<'a>>> {
+    let alias = &source_alias.value;
+    let parameters =
+        bump.alloc_slice_fill_iter(alias.arguments.iter().copied().map(|arg| arg.value));
+    let typ = canonicalize_type(bump, env, source_aliases, alias.typ)?;
+
+    let can_alias = CanAlias {
+        name: alias.name,
+        parameters,
+        typ,
+    };
+
+    Ok(&*bump.alloc(Located::at(source_alias.region, can_alias)))
+}
+
+fn check_union_free_vars<'a>(
+    bump: &'a Bump,
+    union: &'a Located<SourceUnion<'a>>,
+) -> Result<(), Vec<Error<'a>>> {
+    let u = &union.value;
+
+    dups::detect(
+        u.arguments.iter().map(|a| (a.value, a.region)),
+        |arg_name, first, second| Error::DuplicateUnionArg {
+            type_name: u.name.value,
+            arg_name,
+            first,
+            second,
+        },
+    )?;
+
+    let bound: BTreeSet<&str> = u.arguments.iter().map(|a| a.value).collect();
+
+    let mut free_vars: BTreeMap<&str, Region> = BTreeMap::new();
+    for ctor in u.ctors {
+        for arg in ctor.arguments {
+            collect_free_type_vars(arg, &mut free_vars);
+        }
+    }
+
+    let unbound: Vec<(&str, Region)> = free_vars
+        .into_iter()
+        .filter(|(name, _)| !bound.contains(name))
+        .collect();
+
+    if unbound.is_empty() {
+        Ok(())
+    } else {
+        let args = bump.alloc_slice_fill_iter(u.arguments.iter().map(|a| a.value));
+        let (first_unbound, rest_unbound) = unbound.split_first().unwrap();
+        Err(vec![Error::TypeVarsUnboundInUnion {
+            region: union.region,
+            name: u.name.value,
+            args,
+            unbound: *first_unbound,
+            more_unbound: bump.alloc_slice_fill_iter(rest_unbound.iter().copied()),
+        }])
+    }
+}
+
+fn check_alias_free_vars<'a>(
+    bump: &'a Bump,
+    alias: &'a Located<SourceAlias<'a>>,
+) -> Result<(), Vec<Error<'a>>> {
+    let a = &alias.value;
+
+    dups::detect(
+        a.arguments.iter().map(|arg| (arg.value, arg.region)),
+        |arg_name, first, second| Error::DuplicateAliasArg {
+            type_name: a.name.value,
+            arg_name,
+            first,
+            second,
+        },
+    )?;
+
+    let bound: BTreeSet<&str> = a.arguments.iter().map(|arg| arg.value).collect();
+
+    let mut free_vars: BTreeMap<&str, Region> = BTreeMap::new();
+    collect_free_type_vars(a.typ, &mut free_vars);
+
+    let unused: Vec<(&str, Region)> = a
+        .arguments
+        .iter()
+        .filter(|arg| !free_vars.contains_key(arg.value))
+        .map(|arg| (arg.value, arg.region))
+        .collect();
+
+    let unbound: Vec<(&str, Region)> = free_vars
+        .into_iter()
+        .filter(|(name, _)| !bound.contains(name))
+        .collect();
+
+    if unused.is_empty() && unbound.is_empty() {
+        Ok(())
+    } else {
+        let args = bump.alloc_slice_fill_iter(a.arguments.iter().map(|arg| arg.value));
+        Err(vec![Error::TypeVarsMessedUpInAlias {
+            region: alias.region,
+            name: a.name.value,
+            args,
+            unused: bump.alloc_slice_fill_iter(unused),
+            unbound: bump.alloc_slice_fill_iter(unbound),
+        }])
+    }
+}
+
+fn collect_type_edges<'a>(
+    typ: &SourceType<'a>,
+    alias_names: &BTreeSet<&'a str>,
+    edges: &mut Vec<&'a str>,
+) {
+    match typ {
+        SourceType::Lambda { from, to } => {
+            collect_type_edges(&from.value, alias_names, edges);
+            collect_type_edges(&to.value, alias_names, edges);
+        }
+        SourceType::Var(_) => {}
+        SourceType::Type { name, args, .. } => {
+            if alias_names.contains(name) && !edges.contains(name) {
+                edges.push(name);
+            }
+            for arg in *args {
+                collect_type_edges(&arg.value, alias_names, edges);
+            }
+        }
+        SourceType::TypeQual { args, .. } => {
+            // Qualified refs are external, not local alias deps
+            for arg in *args {
+                collect_type_edges(&arg.value, alias_names, edges);
+            }
+        }
+        SourceType::Record { fields, ext: _ } => {
+            for field in *fields {
+                collect_type_edges(&field.typ.value, alias_names, edges);
+            }
+        }
+        SourceType::Unit => {}
+        SourceType::Tuple {
+            first,
+            second,
+            rest,
+        } => {
+            collect_type_edges(&first.value, alias_names, edges);
+            collect_type_edges(&second.value, alias_names, edges);
+            for r in *rest {
+                collect_type_edges(&r.value, alias_names, edges);
+            }
+        }
+    }
+}
+
+fn collect_free_type_vars<'a>(typ: &Located<SourceType<'a>>, vars: &mut BTreeMap<&'a str, Region>) {
+    match &typ.value {
+        SourceType::Var(name) => {
+            vars.entry(name).or_insert(typ.region);
+        }
+        SourceType::Lambda { from, to } => {
+            collect_free_type_vars(from, vars);
+            collect_free_type_vars(to, vars);
+        }
+        SourceType::Type { args, .. } | SourceType::TypeQual { args, .. } => {
+            for arg in *args {
+                collect_free_type_vars(arg, vars);
+            }
+        }
+        SourceType::Record { fields, .. } => {
+            for field in *fields {
+                collect_free_type_vars(field.typ, vars);
+            }
+        }
+        SourceType::Unit => {}
+        SourceType::Tuple {
+            first,
+            second,
+            rest,
+        } => {
+            collect_free_type_vars(first, vars);
+            collect_free_type_vars(second, vars);
+            for r in *rest {
+                collect_free_type_vars(r, vars);
+            }
+        }
+    }
 }
 
 fn canonicalize_type<'a>(
@@ -206,7 +405,7 @@ fn canonicalize_type<'a>(
     env: &Env<'a>,
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     typ: &'a Located<SourceType<'a>>,
-) -> Result<&'a Located<CanType<'a>>, Error<'a>> {
+) -> Result<&'a Located<CanType<'a>>, Vec<Error<'a>>> {
     Ok(bump.alloc(Located::at(
         typ.region,
         canonicalize_type_value(bump, env, source_aliases, typ.region, &typ.value)?,
@@ -219,12 +418,15 @@ fn canonicalize_type_value<'a>(
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     region: Region,
     typ: &SourceType<'a>,
-) -> Result<CanType<'a>, Error<'a>> {
+) -> Result<CanType<'a>, Vec<Error<'a>>> {
     Ok(match typ {
-        SourceType::Lambda { from, to } => CanType::Lambda {
-            from: canonicalize_type(bump, env, source_aliases, from)?,
-            to: canonicalize_type(bump, env, source_aliases, to)?,
-        },
+        SourceType::Lambda { from, to } => {
+            let (from, to) = accumulate::accumulate2(
+                canonicalize_type(bump, env, source_aliases, from),
+                canonicalize_type(bump, env, source_aliases, to),
+            )?;
+            CanType::Lambda { from, to }
+        }
         SourceType::Var(name) => CanType::Var(name),
         SourceType::Type { name, args, .. } => {
             canonicalize_named_type(bump, env, source_aliases, region, name, args)?
@@ -249,9 +451,18 @@ fn canonicalize_type_value<'a>(
                 )?
             }
         }
-        SourceType::Record { fields, ext } => CanType::Record {
-            fields: bump.alloc_slice_fill_results(fields.iter().copied().enumerate().map(
-                |(index, field)| {
+        SourceType::Record { fields, ext } => {
+            dups::detect(
+                fields.iter().map(|f| (f.field.value, f.field.region)),
+                |name, first, second| Error::DuplicateField {
+                    name,
+                    first,
+                    second,
+                },
+            )?;
+            let can_fields = accumulate::try_all_alloc(
+                bump,
+                fields.iter().copied().enumerate().map(|(index, field)| {
                     canonicalize_field_type(
                         bump,
                         env,
@@ -259,20 +470,30 @@ fn canonicalize_type_value<'a>(
                         index.try_into().expect("record field index exceeds u16"),
                         field,
                     )
-                },
-            ))?,
-            ext: ext.map(|name| name.value),
-        },
+                }),
+            )?;
+            CanType::Record {
+                fields: can_fields,
+                ext: ext.map(|name| name.value),
+            }
+        }
         SourceType::Unit => CanType::Unit,
         SourceType::Tuple {
             first,
             second,
             rest,
-        } => CanType::Tuple {
-            first: canonicalize_type(bump, env, source_aliases, first)?,
-            second: canonicalize_type(bump, env, source_aliases, second)?,
-            rest: canonicalize_type_arguments(bump, env, source_aliases, rest)?,
-        },
+        } => {
+            let (first, second, rest) = accumulate::accumulate3(
+                canonicalize_type(bump, env, source_aliases, first),
+                canonicalize_type(bump, env, source_aliases, second),
+                canonicalize_type_arguments(bump, env, source_aliases, rest),
+            )?;
+            CanType::Tuple {
+                first,
+                second,
+                rest,
+            }
+        }
     })
 }
 
@@ -283,45 +504,27 @@ fn canonicalize_named_type<'a>(
     region: Region,
     name: &'a str,
     args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<CanType<'a>, Error<'a>> {
-    // Check env (imported types + local unions + already-processed aliases)
+) -> Result<CanType<'a>, Vec<Error<'a>>> {
     if let Some(info) = env.types.get(name) {
         return match info {
             Info::Specific(_, typ) => {
                 canonicalize_env_type(bump, env, source_aliases, region, name, args, *typ)
             }
-            Info::Ambiguous(first, others) => Err(Error::AmbiguousType {
+            Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousType {
                 region,
                 prefix: None,
                 name,
                 first_module: *first,
                 other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
-            }),
+            }]),
         };
     }
 
-    // Fallback: source aliases not yet in env (forward references during alias processing)
-    if let Some(alias) = find_source_alias(source_aliases, name) {
-        check_arity(region, name, alias.arguments.len(), args.len())?;
-        let arguments =
-            canonicalize_alias_arguments(bump, env, source_aliases, alias.arguments, args)?;
-        let target = CanAliasType::Open(canonicalize_type(bump, env, source_aliases, alias.typ)?);
-
-        return Ok(CanType::Alias {
-            reference: QualifiedName {
-                home: env.home,
-                name,
-            },
-            arguments,
-            target,
-        });
-    }
-
-    Err(Error::NotFoundType {
+    Err(vec![Error::NotFoundType {
         region,
         prefix: None,
         name,
-    })
+    }])
 }
 
 fn canonicalize_qualified_named_type<'a>(
@@ -332,28 +535,30 @@ fn canonicalize_qualified_named_type<'a>(
     prefix: &'a str,
     name: &'a str,
     args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<CanType<'a>, Error<'a>> {
+) -> Result<CanType<'a>, Vec<Error<'a>>> {
     let info = env
         .q_types
         .get(prefix)
         .and_then(|m| m.get(name))
-        .ok_or(Error::NotFoundType {
-            region,
-            prefix: Some(prefix),
-            name,
+        .ok_or_else(|| {
+            vec![Error::NotFoundType {
+                region,
+                prefix: Some(prefix),
+                name,
+            }]
         })?;
 
     match info {
         Info::Specific(_, typ) => {
             canonicalize_env_type(bump, env, source_aliases, region, name, args, *typ)
         }
-        Info::Ambiguous(first, others) => Err(Error::AmbiguousType {
+        Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousType {
             region,
             prefix: Some(prefix),
             name,
             first_module: *first,
             other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
-        }),
+        }]),
     }
 }
 
@@ -365,7 +570,7 @@ fn canonicalize_env_type<'a>(
     name: &'a str,
     args: &'a [&'a Located<SourceType<'a>>],
     typ: environment::Type<'a>,
-) -> Result<CanType<'a>, Error<'a>> {
+) -> Result<CanType<'a>, Vec<Error<'a>>> {
     match typ {
         environment::Type::Alias {
             arity,
@@ -393,38 +598,26 @@ fn canonicalize_env_type<'a>(
     }
 }
 
-fn canonicalize_alias_arguments<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    parameters: &'a [&'a Located<&'a str>],
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<&'a [CanAliasArgument<'a>], Error<'a>> {
-    bump.alloc_slice_fill_results(parameters.iter().copied().zip(args.iter().copied()).map(
-        |(parameter, arg)| {
-            Ok(CanAliasArgument {
-                name: parameter.value,
-                typ: canonicalize_type(bump, env, source_aliases, arg)?,
-            })
-        },
-    ))
-}
-
 fn canonicalize_env_alias_arguments<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     parameters: &'a [&'a str],
     args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<&'a [CanAliasArgument<'a>], Error<'a>> {
-    bump.alloc_slice_fill_results(parameters.iter().copied().zip(args.iter().copied()).map(
-        |(parameter, arg)| {
-            Ok(CanAliasArgument {
-                name: parameter,
-                typ: canonicalize_type(bump, env, source_aliases, arg)?,
-            })
-        },
-    ))
+) -> Result<&'a [CanAliasArgument<'a>], Vec<Error<'a>>> {
+    accumulate::try_all_alloc(
+        bump,
+        parameters
+            .iter()
+            .copied()
+            .zip(args.iter().copied())
+            .map(|(parameter, arg)| {
+                Ok(CanAliasArgument {
+                    name: parameter,
+                    typ: canonicalize_type(bump, env, source_aliases, arg)?,
+                })
+            }),
+    )
 }
 
 fn canonicalize_type_arguments<'a>(
@@ -432,8 +625,9 @@ fn canonicalize_type_arguments<'a>(
     env: &Env<'a>,
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<&'a [&'a Located<CanType<'a>>], Error<'a>> {
-    bump.alloc_slice_fill_results(
+) -> Result<&'a [&'a Located<CanType<'a>>], Vec<Error<'a>>> {
+    accumulate::try_all_alloc_ref(
+        bump,
         args.iter()
             .copied()
             .map(|arg| canonicalize_type(bump, env, source_aliases, arg)),
@@ -445,28 +639,18 @@ fn check_arity<'a>(
     name: &'a str,
     expected: usize,
     actual: usize,
-) -> Result<(), Error<'a>> {
+) -> Result<(), Vec<Error<'a>>> {
     if expected == actual {
         Ok(())
     } else {
-        Err(Error::BadArity {
+        Err(vec![Error::BadArity {
             region,
             context: BadArityContext::TypeArity,
             name,
             expected,
             actual,
-        })
+        }])
     }
-}
-
-fn find_source_alias<'a>(
-    aliases: &'a [&'a Located<SourceAlias<'a>>],
-    name: &str,
-) -> Option<&'a SourceAlias<'a>> {
-    aliases
-        .iter()
-        .find(|alias| alias.value.name.value == name)
-        .map(|alias| &alias.value)
 }
 
 fn canonicalize_field_type<'a>(
@@ -475,7 +659,7 @@ fn canonicalize_field_type<'a>(
     source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     index: u16,
     field: &SourceFieldType<'a>,
-) -> Result<CanFieldType<'a>, Error<'a>> {
+) -> Result<CanFieldType<'a>, Vec<Error<'a>>> {
     Ok(CanFieldType {
         index,
         field: field.field.value,
@@ -486,19 +670,35 @@ fn canonicalize_field_type<'a>(
 fn canonicalize_exports<'a>(
     bump: &'a Bump,
     module: &SourceModule<'a>,
-) -> Result<Exports<'a>, Error<'a>> {
+) -> Result<Exports<'a>, Vec<Error<'a>>> {
     match module.exports.value {
         Exposing::Open => Ok(Exports::Everything(module.exports.region)),
         Exposing::Explicit(exposed) => {
-            let exposed: &'a [&'a Located<Export<'a>>] = bump.alloc_slice_fill_results(
+            dups::detect(
+                exposed.iter().map(|e| exposed_name_and_region(e)),
+                |name, first, second| Error::ExportDuplicate {
+                    name,
+                    first,
+                    second,
+                },
+            )?;
+            let exports = accumulate::try_all_alloc_ref(
+                bump,
                 exposed
                     .iter()
                     .copied()
-                    .map(|exposed| canonicalize_exposed(bump, module, exposed)),
+                    .map(|e| canonicalize_exposed(bump, module, e)),
             )?;
-
-            Ok(Exports::Explicit(exposed))
+            Ok(Exports::Explicit(exports))
         }
+    }
+}
+
+fn exposed_name_and_region<'a>(exposed: &Exposed<'a>) -> (&'a str, Region) {
+    match exposed {
+        Exposed::Lower(name) => (name.value, name.region),
+        Exposed::Upper { name, .. } => (name.value, name.region),
+        Exposed::Operator { region, op } => (op, *region),
     }
 }
 
@@ -535,7 +735,7 @@ fn canonicalize_exposed<'a>(
     bump: &'a Bump,
     module: &SourceModule<'a>,
     exposed: &Exposed<'a>,
-) -> Result<&'a Located<Export<'a>>, Error<'a>> {
+) -> Result<&'a Located<Export<'a>>, Vec<Error<'a>>> {
     Ok(bump.alloc(Located::at(
         exposed_region(exposed),
         canonicalize_export(module, exposed)?,
@@ -545,7 +745,7 @@ fn canonicalize_exposed<'a>(
 fn canonicalize_export<'a>(
     module: &SourceModule<'a>,
     exposed: &Exposed<'a>,
-) -> Result<Export<'a>, Error<'a>> {
+) -> Result<Export<'a>, Vec<Error<'a>>> {
     Ok(match exposed {
         Exposed::Lower(name) => {
             if module
@@ -555,11 +755,11 @@ fn canonicalize_export<'a>(
             {
                 Export::Value(name.value)
             } else {
-                return Err(Error::ExportNotFound {
+                return Err(vec![Error::ExportNotFound {
                     region: name.region,
                     kind: VarKind::BadVar,
                     name: name.value,
-                });
+                }]);
             }
         }
         Exposed::Upper { name, privacy } => {
@@ -579,30 +779,30 @@ fn canonicalize_export<'a>(
             {
                 match privacy {
                     Privacy::Public(region) => {
-                        return Err(Error::ExportOpenAlias {
+                        return Err(vec![Error::ExportOpenAlias {
                             region: *region,
                             name: name.value,
-                        });
+                        }]);
                     }
                     Privacy::Private => Export::Alias(name.value),
                 }
             } else {
-                return Err(Error::ExportNotFound {
+                return Err(vec![Error::ExportNotFound {
                     region: name.region,
                     kind: VarKind::BadType,
                     name: name.value,
-                });
+                }]);
             }
         }
         Exposed::Operator { region, op } => {
             if module.binops.iter().any(|binop| binop.value.op == *op) {
                 Export::Binop(op)
             } else {
-                return Err(Error::ExportNotFound {
+                return Err(vec![Error::ExportNotFound {
                     region: *region,
                     kind: VarKind::BadOp,
                     name: op,
-                });
+                }]);
             }
         }
     })
@@ -644,7 +844,7 @@ mod tests {
         bump: &'a Bump,
         input: &str,
         context: Context<'a>,
-    ) -> Result<CanModule<'a>, Error<'a>> {
+    ) -> Result<CanModule<'a>, Vec<Error<'a>>> {
         let src = bump.alloc_str(input);
         let mut parser = nash_parse::Parser::new(bump, src.as_bytes());
         let module = parser.module().expect("expected successful parse");
@@ -1385,5 +1585,191 @@ mod tests {
         }, {
             insta::assert_debug_snapshot!(alias.to_public());
         });
+    }
+
+    // === Validation tests ===
+
+    #[test]
+    fn duplicate_type_alias_and_union() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Foo = Int
+
+            type Foo
+                = Bar
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_type_two_aliases() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Foo = Int
+
+            type alias Foo = String
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_value_decl() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            foo = 1
+
+            foo = 2
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_binop() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            infix left 6 (|>) = apR
+
+            infix left 6 (|>) = apR2
+        "#
+        );
+    }
+
+    #[test]
+    fn record_type_duplicate_field() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias R = { x : Int, x : String }
+        "#
+        );
+    }
+
+    #[test]
+    fn recursive_alias_self() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Loop = Loop
+        "#
+        );
+    }
+
+    #[test]
+    fn recursive_alias_cycle() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias A = B
+
+            type alias B = A
+        "#
+        );
+    }
+
+    #[test]
+    fn union_unbound_type_var() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type MyType a
+                = MyTag b
+        "#
+        );
+    }
+
+    #[test]
+    fn alias_unused_type_param() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Phantom a = Int
+        "#
+        );
+    }
+
+    #[test]
+    fn alias_unbound_type_var() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Bad = List a
+        "#
+        );
+    }
+
+    #[test]
+    fn union_duplicate_type_param() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type Bad a a
+                = Foo
+        "#
+        );
+    }
+
+    #[test]
+    fn alias_duplicate_type_param() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Bad a a = a
+        "#
+        );
+    }
+
+    #[test]
+    fn multiple_duplicate_types_all_reported() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Foo = Int
+
+            type alias Foo = String
+
+            type alias Bar = Int
+
+            type alias Bar = String
+        "#
+        );
+    }
+
+    #[test]
+    fn record_multiple_duplicate_fields_all_reported() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias R = { x : Int, x : String, y : Int, y : String }
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_export() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (Foo, Foo)
+
+            type alias Foo = Int
+        "#
+        );
     }
 }

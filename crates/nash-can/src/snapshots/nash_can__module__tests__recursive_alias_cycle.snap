@@ -1,0 +1,23 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (..)\n\ntype alias A = B\n\ntype alias B = A\n"
+---
+[
+    RecursiveAlias {
+        region: Region {
+            start: Position {
+                line: 5,
+                column: 12,
+            },
+            end: Position {
+                line: 5,
+                column: 13,
+            },
+        },
+        name: "B",
+        args: [],
+        others: [
+            "A",
+        ],
+    },
+]

@@ -2,4 +2,6 @@
 source: crates/nash-can/src/module.rs
 description: "Code:\n\nmain = 42\n"
 ---
-MissingModuleHeader
+[
+    MissingModuleHeader,
+]

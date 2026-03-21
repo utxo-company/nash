@@ -1,3 +1,4 @@
+pub mod dups;
 pub mod foreign;
 pub mod local;
 

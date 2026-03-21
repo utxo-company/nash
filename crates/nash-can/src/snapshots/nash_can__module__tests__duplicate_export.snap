@@ -1,19 +1,20 @@
 ---
 source: crates/nash-can/src/module.rs
-description: "Code:\n\nmodule Main exposing (Wrapped)\n\nimport Result\n\ntype alias Wrapped e a = Result.Result e a\n"
+description: "Code:\n\nmodule Main exposing (Foo, Foo)\n\ntype alias Foo = Int\n"
 ---
 [
-    ImportNotFound {
+    NotFoundType {
         region: Region {
             start: Position {
                 line: 3,
-                column: 8,
+                column: 18,
             },
             end: Position {
                 line: 3,
-                column: 14,
+                column: 21,
             },
         },
-        module: "Result",
+        prefix: None,
+        name: "Int",
     },
 ]
