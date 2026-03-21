@@ -2,23 +2,22 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bumpalo::Bump;
 use nash_ast::{
-    Alias as CanAlias, AliasArgument as CanAliasArgument, AliasType as CanAliasType,
-    Associativity as CanAssociativity, Binop as CanBinop, Ctor as CanCtor, CtorOpts, Decls, Export,
-    Exports, FieldType as CanFieldType, Module as CanModule, ModuleName, PackageName,
-    Precedence as CanPrecedence, QualifiedName, Type as CanType, Union as CanUnion,
+    Alias as CanAlias, Associativity as CanAssociativity, Binop as CanBinop, Ctor as CanCtor,
+    CtorOpts, Decls, Export, Exports, Module as CanModule, ModuleName, PackageName,
+    Precedence as CanPrecedence, Union as CanUnion,
 };
 use nash_region::{Located, Region};
 use nash_source::{
     Alias as SourceAlias, Associativity as SourceAssociativity, Ctor as SourceCtor, Exposed,
-    Exposing, FieldType as SourceFieldType, Infix, Module as SourceModule,
-    Precedence as SourcePrecedence, Privacy, Type as SourceType, Union as SourceUnion,
-    Value as SourceValue,
+    Exposing, Infix, Module as SourceModule, Precedence as SourcePrecedence, Privacy,
+    Type as SourceType, Union as SourceUnion, Value as SourceValue,
 };
 
 use crate::accumulate;
-use crate::environment::{self, Env, Info, dups};
-use crate::error::{BadArityContext, VarKind};
+use crate::environment::{self, Env, dups};
+use crate::error::VarKind;
 use crate::scc;
+use crate::types;
 use crate::{Error, Interface};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -52,7 +51,7 @@ pub fn canonicalize<'a>(
 
     environment::local::add_union_types(&mut env, module.unions, module.aliases)?;
     let aliases = canonicalize_aliases(bump, &mut env, module.aliases)?;
-    let unions = canonicalize_unions(bump, &env, module.aliases, module.unions)?;
+    let unions = canonicalize_unions(bump, &env, module.unions)?;
 
     environment::local::add_ctors(&mut env, unions, aliases)?;
     environment::local::add_vars(&mut env, module.values)?;
@@ -87,13 +86,12 @@ fn canonicalize_decls<'a>(
 fn canonicalize_unions<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     unions: &'a [&'a Located<SourceUnion<'a>>],
 ) -> Result<&'a [&'a Located<CanUnion<'a>>], Vec<Error<'a>>> {
     accumulate::try_all_alloc_ref(
         bump,
         unions.iter().copied().map(|union| {
-            let can = canonicalize_union(bump, env, source_aliases, union)?;
+            let can = canonicalize_union(bump, env, union)?;
             Ok(&*bump.alloc(Located::at(union.region, can)))
         }),
     )
@@ -102,7 +100,6 @@ fn canonicalize_unions<'a>(
 fn canonicalize_union<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     source_union: &'a Located<SourceUnion<'a>>,
 ) -> Result<CanUnion<'a>, Vec<Error<'a>>> {
     check_union_free_vars(bump, source_union)?;
@@ -110,7 +107,7 @@ fn canonicalize_union<'a>(
     let union = &source_union.value;
     let parameters =
         bump.alloc_slice_fill_iter(union.arguments.iter().copied().map(|arg| arg.value));
-    let ctors = canonicalize_ctors(bump, env, source_aliases, union.ctors)?;
+    let ctors = canonicalize_ctors(bump, env, union.ctors)?;
     let alternatives = union
         .ctors
         .len()
@@ -136,13 +133,12 @@ fn canonicalize_union<'a>(
 fn canonicalize_ctors<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     ctors: &'a [&'a SourceCtor<'a>],
 ) -> Result<&'a [&'a CanCtor<'a>], Vec<Error<'a>>> {
     accumulate::try_all_alloc_ref(
         bump,
         ctors.iter().copied().enumerate().map(|(index, ctor)| {
-            let arguments = canonicalize_type_arguments(bump, env, source_aliases, ctor.arguments)?;
+            let arguments = types::canonicalize_type_arguments(bump, env, ctor.arguments)?;
             Ok(&*bump.alloc(CanCtor {
                 name: ctor.name.value,
                 index: index.try_into().expect("constructor index exceeds u16"),
@@ -183,7 +179,7 @@ fn canonicalize_aliases<'a>(
                     .find(|a| a.value.name.value == *name)
                     .unwrap();
                 check_alias_free_vars(bump, source)?;
-                let alias = canonicalize_single_alias(bump, env, source_aliases, source)?;
+                let alias = canonicalize_single_alias(bump, env, source)?;
                 environment::local::add_alias_type(bump, env, &alias.value);
                 results.insert(name, alias);
             }
@@ -212,13 +208,12 @@ fn canonicalize_aliases<'a>(
 fn canonicalize_single_alias<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
     source_alias: &'a Located<SourceAlias<'a>>,
 ) -> Result<&'a Located<CanAlias<'a>>, Vec<Error<'a>>> {
     let alias = &source_alias.value;
     let parameters =
         bump.alloc_slice_fill_iter(alias.arguments.iter().copied().map(|arg| arg.value));
-    let typ = canonicalize_type(bump, env, source_aliases, alias.typ)?;
+    let typ = types::canonicalize_type(bump, env, alias.typ)?;
 
     let can_alias = CanAlias {
         name: alias.name,
@@ -398,273 +393,6 @@ fn collect_free_type_vars<'a>(typ: &Located<SourceType<'a>>, vars: &mut BTreeMap
             }
         }
     }
-}
-
-fn canonicalize_type<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    typ: &'a Located<SourceType<'a>>,
-) -> Result<&'a Located<CanType<'a>>, Vec<Error<'a>>> {
-    Ok(bump.alloc(Located::at(
-        typ.region,
-        canonicalize_type_value(bump, env, source_aliases, typ.region, &typ.value)?,
-    )))
-}
-
-fn canonicalize_type_value<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    region: Region,
-    typ: &SourceType<'a>,
-) -> Result<CanType<'a>, Vec<Error<'a>>> {
-    Ok(match typ {
-        SourceType::Lambda { from, to } => {
-            let (from, to) = accumulate::accumulate2(
-                canonicalize_type(bump, env, source_aliases, from),
-                canonicalize_type(bump, env, source_aliases, to),
-            )?;
-            CanType::Lambda { from, to }
-        }
-        SourceType::Var(name) => CanType::Var(name),
-        SourceType::Type { name, args, .. } => {
-            canonicalize_named_type(bump, env, source_aliases, region, name, args)?
-        }
-        SourceType::TypeQual {
-            module: type_module,
-            name,
-            args,
-            ..
-        } => {
-            if *type_module == env.home.name {
-                canonicalize_named_type(bump, env, source_aliases, region, name, args)?
-            } else {
-                canonicalize_qualified_named_type(
-                    bump,
-                    env,
-                    source_aliases,
-                    region,
-                    type_module,
-                    name,
-                    args,
-                )?
-            }
-        }
-        SourceType::Record { fields, ext } => {
-            dups::detect(
-                fields.iter().map(|f| (f.field.value, f.field.region)),
-                |name, first, second| Error::DuplicateField {
-                    name,
-                    first,
-                    second,
-                },
-            )?;
-            let can_fields = accumulate::try_all_alloc(
-                bump,
-                fields.iter().copied().enumerate().map(|(index, field)| {
-                    canonicalize_field_type(
-                        bump,
-                        env,
-                        source_aliases,
-                        index.try_into().expect("record field index exceeds u16"),
-                        field,
-                    )
-                }),
-            )?;
-            CanType::Record {
-                fields: can_fields,
-                ext: ext.map(|name| name.value),
-            }
-        }
-        SourceType::Unit => CanType::Unit,
-        SourceType::Tuple {
-            first,
-            second,
-            rest,
-        } => {
-            let (first, second, rest) = accumulate::accumulate3(
-                canonicalize_type(bump, env, source_aliases, first),
-                canonicalize_type(bump, env, source_aliases, second),
-                canonicalize_type_arguments(bump, env, source_aliases, rest),
-            )?;
-            CanType::Tuple {
-                first,
-                second,
-                rest,
-            }
-        }
-    })
-}
-
-fn canonicalize_named_type<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    region: Region,
-    name: &'a str,
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<CanType<'a>, Vec<Error<'a>>> {
-    if let Some(info) = env.types.get(name) {
-        return match info {
-            Info::Specific(_, typ) => {
-                canonicalize_env_type(bump, env, source_aliases, region, name, args, *typ)
-            }
-            Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousType {
-                region,
-                prefix: None,
-                name,
-                first_module: *first,
-                other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
-            }]),
-        };
-    }
-
-    Err(vec![Error::NotFoundType {
-        region,
-        prefix: None,
-        name,
-    }])
-}
-
-fn canonicalize_qualified_named_type<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    region: Region,
-    prefix: &'a str,
-    name: &'a str,
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<CanType<'a>, Vec<Error<'a>>> {
-    let info = env
-        .q_types
-        .get(prefix)
-        .and_then(|m| m.get(name))
-        .ok_or_else(|| {
-            vec![Error::NotFoundType {
-                region,
-                prefix: Some(prefix),
-                name,
-            }]
-        })?;
-
-    match info {
-        Info::Specific(_, typ) => {
-            canonicalize_env_type(bump, env, source_aliases, region, name, args, *typ)
-        }
-        Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousType {
-            region,
-            prefix: Some(prefix),
-            name,
-            first_module: *first,
-            other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
-        }]),
-    }
-}
-
-fn canonicalize_env_type<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    region: Region,
-    name: &'a str,
-    args: &'a [&'a Located<SourceType<'a>>],
-    typ: environment::Type<'a>,
-) -> Result<CanType<'a>, Vec<Error<'a>>> {
-    match typ {
-        environment::Type::Alias {
-            arity,
-            home,
-            parameters,
-            typ: alias_typ,
-        } => {
-            check_arity(region, name, arity, args.len())?;
-            let arguments =
-                canonicalize_env_alias_arguments(bump, env, source_aliases, parameters, args)?;
-            Ok(CanType::Alias {
-                reference: QualifiedName { home, name },
-                arguments,
-                target: CanAliasType::Open(alias_typ),
-            })
-        }
-        environment::Type::Union { arity, home } => {
-            check_arity(region, name, arity, args.len())?;
-            let args = canonicalize_type_arguments(bump, env, source_aliases, args)?;
-            Ok(CanType::Named {
-                reference: QualifiedName { home, name },
-                args,
-            })
-        }
-    }
-}
-
-fn canonicalize_env_alias_arguments<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    parameters: &'a [&'a str],
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<&'a [CanAliasArgument<'a>], Vec<Error<'a>>> {
-    accumulate::try_all_alloc(
-        bump,
-        parameters
-            .iter()
-            .copied()
-            .zip(args.iter().copied())
-            .map(|(parameter, arg)| {
-                Ok(CanAliasArgument {
-                    name: parameter,
-                    typ: canonicalize_type(bump, env, source_aliases, arg)?,
-                })
-            }),
-    )
-}
-
-fn canonicalize_type_arguments<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<&'a [&'a Located<CanType<'a>>], Vec<Error<'a>>> {
-    accumulate::try_all_alloc_ref(
-        bump,
-        args.iter()
-            .copied()
-            .map(|arg| canonicalize_type(bump, env, source_aliases, arg)),
-    )
-}
-
-fn check_arity<'a>(
-    region: Region,
-    name: &'a str,
-    expected: usize,
-    actual: usize,
-) -> Result<(), Vec<Error<'a>>> {
-    if expected == actual {
-        Ok(())
-    } else {
-        Err(vec![Error::BadArity {
-            region,
-            context: BadArityContext::TypeArity,
-            name,
-            expected,
-            actual,
-        }])
-    }
-}
-
-fn canonicalize_field_type<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    source_aliases: &'a [&'a Located<SourceAlias<'a>>],
-    index: u16,
-    field: &SourceFieldType<'a>,
-) -> Result<CanFieldType<'a>, Vec<Error<'a>>> {
-    Ok(CanFieldType {
-        index,
-        field: field.field.value,
-        typ: canonicalize_type(bump, env, source_aliases, field.typ)?,
-    })
 }
 
 fn canonicalize_exports<'a>(

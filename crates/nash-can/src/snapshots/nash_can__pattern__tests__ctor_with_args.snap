@@ -1,0 +1,80 @@
+---
+source: crates/nash-can/src/pattern.rs
+description: Just x
+---
+(
+    Located {
+        region: Region {
+            start: Position {
+                line: 1,
+                column: 1,
+            },
+            end: Position {
+                line: 1,
+                column: 7,
+            },
+        },
+        value: Constructor(
+            PatternCtor {
+                reference: ConstructorName {
+                    home: ModuleName {
+                        package: None,
+                        name: "Maybe",
+                    },
+                    union: "Maybe",
+                    name: "Just",
+                },
+                index: 0,
+                arguments: [
+                    PatternCtorArg {
+                        index: 0,
+                        typ: Located {
+                            region: Region {
+                                start: Position {
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                            value: Var(
+                                "a",
+                            ),
+                        },
+                        pattern: Located {
+                            region: Region {
+                                start: Position {
+                                    line: 1,
+                                    column: 6,
+                                },
+                                end: Position {
+                                    line: 1,
+                                    column: 7,
+                                },
+                            },
+                            value: Var(
+                                "x",
+                            ),
+                        },
+                    },
+                ],
+                options: Normal,
+                alternatives: 2,
+            },
+        ),
+    },
+    {
+        "x": Region {
+            start: Position {
+                line: 1,
+                column: 6,
+            },
+            end: Position {
+                line: 1,
+                column: 7,
+            },
+        },
+    },
+)

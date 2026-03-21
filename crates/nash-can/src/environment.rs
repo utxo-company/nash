@@ -4,8 +4,11 @@ pub mod local;
 
 use std::collections::BTreeMap;
 
+use bumpalo::Bump;
 use nash_ast::{Associativity, CtorOpts, ModuleName, Precedence, Type as CanType};
 use nash_region::{Located, Region};
+
+use crate::Error;
 
 /// A resolved name: either uniquely identified or ambiguous across modules.
 #[derive(Clone, Debug)]
@@ -108,6 +111,61 @@ impl<'a> Env<'a> {
             .entry(self.home.name)
             .or_default()
             .insert(name, Info::Specific(self.home, ctor));
+    }
+
+    /// Look up an unqualified constructor. Mirrors Elm's `Env.findCtor`.
+    pub fn find_ctor(
+        &self,
+        bump: &'a Bump,
+        region: Region,
+        name: &'a str,
+    ) -> Result<Ctor<'a>, Vec<Error<'a>>> {
+        match self.ctors.get(name) {
+            Some(Info::Specific(_, ctor)) => Ok(*ctor),
+            Some(Info::Ambiguous(first, others)) => Err(vec![Error::AmbiguousCtor {
+                region,
+                prefix: None,
+                name,
+                first_module: *first,
+                other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
+            }]),
+            None => Err(vec![Error::NotFoundCtor {
+                region,
+                prefix: None,
+                name,
+            }]),
+        }
+    }
+
+    /// Look up a qualified constructor. Mirrors Elm's `Env.findCtorQual`.
+    pub fn find_ctor_qual(
+        &self,
+        bump: &'a Bump,
+        region: Region,
+        prefix: &'a str,
+        name: &'a str,
+    ) -> Result<Ctor<'a>, Vec<Error<'a>>> {
+        let info = self
+            .q_ctors
+            .get(prefix)
+            .and_then(|m| m.get(name))
+            .ok_or_else(|| {
+                vec![Error::NotFoundCtor {
+                    region,
+                    prefix: Some(prefix),
+                    name,
+                }]
+            })?;
+        match info {
+            Info::Specific(_, ctor) => Ok(*ctor),
+            Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousCtor {
+                region,
+                prefix: Some(prefix),
+                name,
+                first_module: *first,
+                other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
+            }]),
+        }
     }
 }
 

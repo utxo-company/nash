@@ -8,6 +8,15 @@ pub enum BadArityContext {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DuplicatePatternContext {
+    LambdaArgs,
+    FuncArgs,
+    CaseBranch,
+    LetBinding,
+    Destruct,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VarKind {
     BadOp,
     BadVar,
@@ -111,5 +120,30 @@ pub enum Error<'a> {
         name: &'a str,
         first: Region,
         second: Region,
+    },
+    NotFoundCtor {
+        region: Region,
+        prefix: Option<&'a str>,
+        name: &'a str,
+    },
+    AmbiguousCtor {
+        region: Region,
+        prefix: Option<&'a str>,
+        name: &'a str,
+        first_module: ModuleName<'a>,
+        other_modules: &'a [ModuleName<'a>],
+    },
+    PatternHasRecordCtor {
+        region: Region,
+        name: &'a str,
+    },
+    DuplicatePattern {
+        context: DuplicatePatternContext,
+        name: &'a str,
+        first: Region,
+        second: Region,
+    },
+    TupleLargerThanThree {
+        region: Region,
     },
 }
