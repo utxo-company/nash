@@ -15,15 +15,24 @@ use nash_source::{
 
 use crate::accumulate;
 use crate::environment::{self, Env, dups};
-use crate::error::VarKind;
+use crate::error::{DuplicatePatternContext, VarKind};
+use crate::expression;
+use crate::pattern;
 use crate::scc;
 use crate::types;
+use crate::warning::{Warning, WarningContext};
 use crate::{Error, Interface};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Context<'a> {
     pub package: Option<PackageName<'a>>,
     pub interfaces: Option<&'a BTreeMap<&'a str, Interface<'a>>>,
+}
+
+#[derive(Debug)]
+pub struct CanResult<'a> {
+    pub module: CanModule<'a>,
+    pub warnings: Vec<Warning<'a>>,
 }
 
 fn canonicalize_header<'a>(
@@ -42,7 +51,7 @@ pub fn canonicalize<'a>(
     bump: &'a Bump,
     context: Context<'a>,
     module: &SourceModule<'a>,
-) -> Result<CanModule<'a>, Vec<Error<'a>>> {
+) -> Result<CanResult<'a>, Vec<Error<'a>>> {
     let home = canonicalize_header(context, module).map_err(|e| vec![e])?;
 
     let mut env =
@@ -57,29 +66,108 @@ pub fn canonicalize<'a>(
     environment::local::add_vars(&mut env, module.values)?;
     environment::local::add_binops(&mut env, module.binops)?;
 
-    let decls = canonicalize_decls(bump, module.values);
+    let mut warnings = Vec::new();
+    let decls = canonicalize_decls(bump, &env, module.values, &mut warnings)?;
     let binops = canonicalize_binops(bump, module.binops);
     let exports = canonicalize_exports(bump, module)?;
 
-    Ok(CanModule {
-        name: env.home,
-        exports,
-        docs: module.docs,
-        decls,
-        unions,
-        aliases,
-        binops,
+    Ok(CanResult {
+        module: CanModule {
+            name: env.home,
+            exports,
+            docs: module.docs,
+            decls,
+            unions,
+            aliases,
+            binops,
+        },
+        warnings,
     })
 }
 
 fn canonicalize_decls<'a>(
     bump: &'a Bump,
+    env: &Env<'a>,
     values: &'a [&'a Located<SourceValue<'a>>],
-) -> &'a Decls<'a> {
+    warnings: &mut Vec<Warning<'a>>,
+) -> Result<&'a Decls<'a>, Vec<Error<'a>>> {
     if values.is_empty() {
-        bump.alloc(Decls::Empty)
+        return Ok(bump.alloc(Decls::Empty));
+    }
+
+    let mut errors = Vec::new();
+    let mut defs: Vec<&'a nash_ast::Def<'a>> = Vec::with_capacity(values.len());
+    for value in values {
+        match canonicalize_value(bump, env, value, warnings) {
+            Ok(def) => defs.push(def),
+            Err(errs) => errors.extend(errs),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    // Build Declare chain (all non-recursive for now)
+    let mut decls: &'a Decls<'a> = bump.alloc(Decls::Empty);
+    for def in defs.into_iter().rev() {
+        decls = bump.alloc(Decls::Declare {
+            definition: def,
+            next: decls,
+        });
+    }
+    Ok(decls)
+}
+
+fn canonicalize_value<'a>(
+    bump: &'a Bump,
+    env: &Env<'a>,
+    value: &'a Located<SourceValue<'a>>,
+    warnings: &mut Vec<Warning<'a>>,
+) -> Result<&'a nash_ast::Def<'a>, Vec<Error<'a>>> {
+    let src = &value.value;
+    let mut arg_bindings = pattern::Bindings::new();
+    let mut can_args = Vec::with_capacity(src.arguments.len());
+    for arg in src.arguments {
+        let (can_pat, bindings) = pattern::verify(
+            bump,
+            env,
+            DuplicatePatternContext::FuncArgs(src.name.value),
+            arg,
+        )?;
+        can_args.push(can_pat);
+        arg_bindings.extend(bindings);
+    }
+    let body_env = env.add_locals(&arg_bindings)?;
+    let mut free_locals = expression::FreeLocals::new();
+    let can_body =
+        expression::canonicalize_expr(bump, &body_env, src.body, &mut free_locals, warnings)?;
+
+    // verify_bindings for function args
+    expression::verify_bindings(
+        WarningContext::Pattern,
+        &arg_bindings,
+        free_locals,
+        warnings,
+    );
+
+    if let Some(ann) = src.annotation {
+        let annotation = types::to_annotation(bump, env, ann)?;
+        let typed_args =
+            expression::gather_typed_args(bump, src.name.value, &can_args, annotation)?;
+        let result_type = expression::peel_result_type(annotation, can_args.len());
+        Ok(bump.alloc(nash_ast::Def::TypedDef {
+            name: src.name,
+            free_vars: annotation.free_vars,
+            args: typed_args,
+            body: can_body,
+            typ: result_type,
+        }))
     } else {
-        todo!("canonicalize values and dependency ordering");
+        Ok(bump.alloc(nash_ast::Def::Def {
+            name: src.name,
+            args: bump.alloc_slice_fill_iter(can_args),
+            body: can_body,
+        }))
     }
 }
 
@@ -576,7 +664,7 @@ mod tests {
         let src = bump.alloc_str(input);
         let mut parser = nash_parse::Parser::new(bump, src.as_bytes());
         let module = parser.module().expect("expected successful parse");
-        canonicalize(bump, context, &module)
+        canonicalize(bump, context, &module).map(|r| r.module)
     }
 
     macro_rules! assert_module_snapshot {
@@ -1497,6 +1585,363 @@ mod tests {
             module Main exposing (Foo, Foo)
 
             type alias Foo = Int
+        "#
+        );
+    }
+
+    // === Expression canonicalization tests ===
+
+    fn parse_and_canonicalize_with_warnings<'a>(
+        bump: &'a Bump,
+        input: &str,
+        context: Context<'a>,
+    ) -> Result<(CanModule<'a>, Vec<crate::Warning<'a>>), Vec<Error<'a>>> {
+        let src = bump.alloc_str(input);
+        let mut parser = nash_parse::Parser::new(bump, src.as_bytes());
+        let module = parser.module().expect("expected successful parse");
+        canonicalize(bump, context, &module).map(|r| (r.module, r.warnings))
+    }
+
+    macro_rules! assert_module_warning_snapshot {
+        ($input:expr) => {{
+            let input = indoc!($input);
+            let bump = Bump::new();
+            let (_, warnings) =
+                parse_and_canonicalize_with_warnings(&bump, input, Context::default())
+                    .expect("expected successful canonicalization");
+            assert!(!warnings.is_empty(), "expected warnings but got none");
+            insta::with_settings!({
+                description => format!("Code:\n\n{}", input),
+                omit_expression => true,
+            }, {
+                insta::assert_debug_snapshot!(warnings);
+            });
+        }};
+    }
+
+    // -- Positive expression tests --
+
+    #[test]
+    fn simple_value() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            x = 42
+        "#
+        );
+    }
+
+    #[test]
+    fn function_def() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f a b = a
+        "#
+        );
+    }
+
+    #[test]
+    fn lambda_expr() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = \x -> x
+        "#
+        );
+    }
+
+    #[test]
+    fn let_expr() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    x = 1
+                in
+                x
+        "#
+        );
+    }
+
+    #[test]
+    fn if_then_else() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x = if x then 1 else 2
+        "#
+        );
+    }
+
+    #[test]
+    fn record_literal() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = { x = 1, y = 2 }
+        "#
+        );
+    }
+
+    #[test]
+    fn record_update() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f r = { r | x = 1 }
+        "#
+        );
+    }
+
+    #[test]
+    fn list_literal() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = [ 1, 2, 3 ]
+        "#
+        );
+    }
+
+    #[test]
+    fn accessor_expr() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = .name
+        "#
+        );
+    }
+
+    #[test]
+    fn field_access() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f r = r.name
+        "#
+        );
+    }
+
+    #[test]
+    fn case_expr() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x =
+                case x of
+                    1 -> "one"
+                    _ -> "other"
+        "#
+        );
+    }
+
+    #[test]
+    fn string_literal() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = "hello"
+        "#
+        );
+    }
+
+    #[test]
+    fn negate_expr() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x = -x
+        "#
+        );
+    }
+
+    #[test]
+    fn function_call() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x = g x
+
+            g y = y
+        "#
+        );
+    }
+
+    #[test]
+    fn tuple_expr() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = ( 1, 2, 3 )
+        "#
+        );
+    }
+
+    #[test]
+    fn unit_expr() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = ()
+        "#
+        );
+    }
+
+    #[test]
+    fn let_recursive_function() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    go x = go x
+                in
+                go 1
+        "#
+        );
+    }
+
+    #[test]
+    fn nested_let() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    x = 1
+                    y = 2
+                in
+                x
+        "#
+        );
+    }
+
+    // -- Error expression tests --
+
+    #[test]
+    fn not_found_var() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = nonexistent
+        "#
+        );
+    }
+
+    #[test]
+    fn recursive_let_value() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    x = x
+                in
+                x
+        "#
+        );
+    }
+
+    #[test]
+    fn shadowing_local() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x =
+                let
+                    x = 1
+                in
+                x
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_let_bindings() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    x = 1
+                    x = 2
+                in
+                x
+        "#
+        );
+    }
+
+    #[test]
+    fn tuple_four_in_expr() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = ( 1, 2, 3, 4 )
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_record_fields_in_expr() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = { x = 1, x = 2 }
+        "#
+        );
+    }
+
+    // -- Warning tests --
+
+    #[test]
+    fn unused_lambda_arg() {
+        assert_module_warning_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = \x -> 1
+        "#
+        );
+    }
+
+    #[test]
+    fn unused_let_binding() {
+        assert_module_warning_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    x = 1
+                in
+                2
         "#
         );
     }
