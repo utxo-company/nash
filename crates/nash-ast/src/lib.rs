@@ -128,7 +128,7 @@ pub enum Expr<'a> {
     VarOperator {
         symbol: &'a str,
         reference: QualifiedName<'a>,
-        annotation: &'a Annotation<'a>,
+        annotation: Option<&'a Annotation<'a>>,
     },
     Str(&'a str),
     Int(i128),
@@ -137,7 +137,7 @@ pub enum Expr<'a> {
     Binop {
         symbol: &'a str,
         reference: QualifiedName<'a>,
-        annotation: &'a Annotation<'a>,
+        annotation: Option<&'a Annotation<'a>>,
         left: &'a Located<Expr<'a>>,
         right: &'a Located<Expr<'a>>,
     },
@@ -203,6 +203,7 @@ pub struct CaseBranch<'a> {
 
 #[derive(Debug)]
 pub struct FieldUpdate<'a> {
+    pub field: &'a str,
     pub region: Region,
     pub value: &'a Located<Expr<'a>>,
 }
