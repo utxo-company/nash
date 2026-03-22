@@ -8,7 +8,7 @@ set -euo pipefail
 input=$(cat)
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo '{}'
+  echo '{"decision":"block","reason":"jq is required for config guardian but is not installed."}'
   exit 0
 fi
 

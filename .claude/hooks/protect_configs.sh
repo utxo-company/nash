@@ -48,7 +48,7 @@ case "$file_path" in
 esac
 
 # --- Protected linter config basenames ---
-basename=$(basename "$file_path")
+basename_f=$(basename "$file_path")
 
 PROTECTED_CONFIGS=(
   "rustfmt.toml"
@@ -59,8 +59,8 @@ PROTECTED_CONFIGS=(
 )
 
 for cfg in "${PROTECTED_CONFIGS[@]}"; do
-  if [[ "$basename" == "$cfg" ]]; then
-    deny "$basename"
+  if [[ "$basename_f" == "$cfg" ]]; then
+    deny "$basename_f"
   fi
 done
 

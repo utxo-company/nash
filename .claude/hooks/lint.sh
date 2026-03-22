@@ -42,7 +42,7 @@ exit_block() {
 # ── Guards ──────────────────────────────────────────────────
 
 if ! command -v jq >/dev/null 2>&1; then
-  exit_ok  # Lint hook is fail-open — don't block editing if jq missing
+  exit_block "jq is required for the lint hook but is not installed. Install it with: brew install jq"
 fi
 
 input=$(cat)
@@ -97,120 +97,137 @@ merge_violations() {
 # PHASE 1: Auto-format (silent)
 # ════════════════════════════════════════════════════════════
 
-if [[ "$ext" == "rs" ]]; then
-  cargo fmt --all 2>/dev/null || true
-fi
-
-if [[ "$ext" == "toml" ]] && command -v taplo >/dev/null 2>&1; then
-  taplo fmt "$file_path" 2>/dev/null || true
-fi
-
-if [[ "$ext" == "md" ]] && command -v markdownlint-cli2 >/dev/null 2>&1; then
-  markdownlint-cli2 --no-globs --fix "$file_path" 2>/dev/null || true
-fi
-
-if [[ "$ext" == "json" ]]; then
-  if tmp=$(jq '.' "$file_path" 2>/dev/null); then
-    echo "$tmp" > "$file_path"
+run_phase1() {
+  if [[ "$ext" == "rs" ]]; then
+    cargo fmt --all 2>/dev/null || true
   fi
-fi
+
+  if [[ "$ext" == "toml" ]] && command -v taplo >/dev/null 2>&1; then
+    taplo fmt "$file_path" 2>/dev/null || true
+  fi
+
+  if [[ "$ext" == "md" ]] && command -v markdownlint-cli2 >/dev/null 2>&1; then
+    markdownlint-cli2 --no-globs --fix "$file_path" 2>/dev/null || true
+  fi
+
+  if [[ "$ext" == "json" ]]; then
+    if tmp=$(jq '.' "$file_path" 2>/dev/null); then
+      echo "$tmp" > "$file_path"
+    fi
+  fi
+}
+
+run_phase1
 
 # ════════════════════════════════════════════════════════════
 # PHASE 2: Collect violations
 # ════════════════════════════════════════════════════════════
 
-# ── Rust: cargo clippy ──────────────────────────────────────
+run_phase2() {
+  collected_violations="[]"
 
-if [[ "$ext" == "rs" ]] || [[ "$ext" == "toml" ]]; then
-  # Bust clippy's incremental cache so it re-analyzes the edited file
-  touch "$file_path" 2>/dev/null || true
-  clippy_raw=$(cargo clippy --all-targets --all-features --message-format=json -- -D warnings 2>/dev/null) || true
+  # ── Rust: cargo clippy ──────────────────────────────────────
 
-  clippy_violations=$(echo "$clippy_raw" | \
-    jq -c '
-      select(.reason == "compiler-message")
-      | select(.message.level == "error" or .message.level == "warning")
-      | select(.message.code != null)
-      | select(.message.spans | length > 0)
-      | {
-          file: .message.spans[0].file_name,
-          line: .message.spans[0].line_start,
-          column: .message.spans[0].column_start,
-          code: .message.code.code,
-          message: .message.message,
-          linter: "clippy"
-        }
-    ' 2>/dev/null | jq -s '.' 2>/dev/null) || clippy_violations="[]"
+  if [[ "$ext" == "rs" ]] || [[ "$ext" == "toml" ]]; then
+    # Bust clippy's incremental cache so it re-analyzes the edited file
+    touch "$file_path" 2>/dev/null || true
+    clippy_raw=$(cargo clippy --all-targets --all-features --message-format=json -- -D warnings 2>/dev/null) || true
 
-  merge_violations "$clippy_violations"
-fi
+    clippy_violations=$(echo "$clippy_raw" | \
+      jq -c '
+        select(.reason == "compiler-message")
+        | select(.message.level == "error" or .message.level == "warning")
+        | select(.message.code != null)
+        | select(.message.spans | length > 0)
+        | {
+            file: .message.spans[0].file_name,
+            line: .message.spans[0].line_start,
+            column: .message.spans[0].column_start,
+            code: .message.code.code,
+            message: .message.message,
+            linter: "clippy"
+          }
+      ' 2>/dev/null | jq -s '.' 2>/dev/null) || clippy_violations="[]"
 
-# ── TOML: taplo lint ────────────────────────────────────────
-
-if [[ "$ext" == "toml" ]] && command -v taplo >/dev/null 2>&1; then
-  taplo_raw=$(taplo lint "$file_path" 2>&1) || true
-  if [[ -n "$taplo_raw" ]] && echo "$taplo_raw" | grep -qi "error\|invalid"; then
-    taplo_violations=$(jq -n --arg f "$file_path" --arg m "$taplo_raw" \
-      '[{file: $f, line: 0, column: 0, code: "TOML_SYNTAX", message: $m, linter: "taplo"}]' \
-      2>/dev/null) || taplo_violations="[]"
-    merge_violations "$taplo_violations"
+    merge_violations "$clippy_violations"
   fi
-fi
 
-# ── Markdown: markdownlint-cli2 ─────────────────────────────
+  # ── TOML: taplo lint ────────────────────────────────────────
 
-if [[ "$ext" == "md" ]] && command -v markdownlint-cli2 >/dev/null 2>&1; then
-  mdlint_raw=$(markdownlint-cli2 --no-globs "$file_path" 2>&1) || true
-  if [[ -n "$mdlint_raw" ]]; then
-    md_violations=$(echo "$mdlint_raw" | while IFS= read -r line; do
-      md_line=$(echo "$line" | grep -oE ':([0-9]+)' | head -1 | tr -d ':') || md_line="0"
-      md_code=$(echo "$line" | grep -oE 'MD[0-9]+(/[a-z-]+)?' | head -1) || md_code=""
-      md_msg=$(echo "$line" | sed -E 's/^[^:]+:[0-9]+ //' || echo "$line")
-      [[ -n "$md_code" ]] && echo "{\"file\":\"$file_path\",\"line\":${md_line:-0},\"column\":0,\"code\":\"$md_code\",\"message\":$(echo "$md_msg" | jq -Rs .),\"linter\":\"markdownlint\"}"
-    done | jq -s '.' 2>/dev/null) || md_violations="[]"
-    merge_violations "$md_violations"
-  fi
-fi
-
-# ── YAML: yamllint ──────────────────────────────────────────
-
-if [[ "$ext" == "yaml" ]] || [[ "$ext" == "yml" ]]; then
-  if command -v yamllint >/dev/null 2>&1; then
-    yaml_raw=$(yamllint -f parsable "$file_path" 2>&1) || true
-    if [[ -n "$yaml_raw" ]]; then
-      yaml_violations=$(echo "$yaml_raw" | while IFS= read -r line; do
-        y_line=$(echo "$line" | sed -E 's/^[^:]*:([0-9]+):[0-9]+: .*/\1/' 2>/dev/null) || y_line="0"
-        y_col=$(echo "$line" | sed -E 's/^[^:]*:[0-9]+:([0-9]+): .*/\1/' 2>/dev/null) || y_col="0"
-        y_code=$(echo "$line" | grep -oE '\([^)]+\)' | tr -d '()' | head -1) || y_code="yaml-error"
-        y_msg=$(echo "$line" | sed -E 's/^[^:]*:[0-9]+:[0-9]+: \[[a-z]+\] //' | sed -E 's/ \([^)]+\)$//' 2>/dev/null) || y_msg="$line"
-        [[ -n "$y_code" ]] && echo "{\"file\":\"$file_path\",\"line\":${y_line:-0},\"column\":${y_col:-0},\"code\":\"$y_code\",\"message\":$(echo "$y_msg" | jq -Rs .),\"linter\":\"yamllint\"}"
-      done | jq -s '.' 2>/dev/null) || yaml_violations="[]"
-      merge_violations "$yaml_violations"
+  if [[ "$ext" == "toml" ]] && command -v taplo >/dev/null 2>&1; then
+    taplo_raw=$(taplo lint "$file_path" 2>&1) || true
+    if [[ -n "$taplo_raw" ]] && echo "$taplo_raw" | grep -qi "error\|invalid"; then
+      taplo_violations=$(jq -n --arg f "$file_path" --arg m "$taplo_raw" \
+        '[{file: $f, line: 0, column: 0, code: "TOML_SYNTAX", message: $m, linter: "taplo"}]' \
+        2>/dev/null) || taplo_violations="[]"
+      merge_violations "$taplo_violations"
     fi
   fi
-fi
 
-# ── JSON: syntax check ──────────────────────────────────────
+  # ── Markdown: markdownlint-cli2 ─────────────────────────────
 
-if [[ "$ext" == "json" ]]; then
-  if ! jq empty "$file_path" 2>/dev/null; then
-    json_err=$(jq empty "$file_path" 2>&1 || true)
-    json_violations=$(jq -n --arg f "$file_path" --arg m "$json_err" \
-      '[{file: $f, line: 0, column: 0, code: "JSON_SYNTAX", message: $m, linter: "jq"}]' \
-      2>/dev/null) || json_violations="[]"
-    merge_violations "$json_violations"
+  if [[ "$ext" == "md" ]] && command -v markdownlint-cli2 >/dev/null 2>&1; then
+    mdlint_raw=$(markdownlint-cli2 --no-globs "$file_path" 2>&1) || true
+    if [[ -n "$mdlint_raw" ]]; then
+      md_violations=$(echo "$mdlint_raw" | while IFS= read -r line; do
+        md_line=$(echo "$line" | grep -oE ':([0-9]+)' | head -1 | tr -d ':') || md_line="0"
+        md_code=$(echo "$line" | grep -oE 'MD[0-9]+(/[a-z-]+)?' | head -1) || md_code=""
+        md_msg=$(echo "$line" | sed -E 's/^[^:]+:[0-9]+ //' || echo "$line")
+        [[ -n "$md_code" ]] && echo "{\"file\":\"$file_path\",\"line\":${md_line:-0},\"column\":0,\"code\":\"$md_code\",\"message\":$(echo "$md_msg" | jq -Rs .),\"linter\":\"markdownlint\"}"
+      done | jq -s '.' 2>/dev/null) || md_violations="[]"
+      merge_violations "$md_violations"
+    fi
   fi
-fi
 
-# ── Check violation count ───────────────────────────────────
+  # ── YAML: yamllint ──────────────────────────────────────────
 
-violation_count=$(echo "$collected_violations" | jq 'length' 2>/dev/null) || violation_count=0
+  if [[ "$ext" == "yaml" ]] || [[ "$ext" == "yml" ]]; then
+    if command -v yamllint >/dev/null 2>&1; then
+      yaml_raw=$(yamllint -f parsable "$file_path" 2>&1) || true
+      if [[ -n "$yaml_raw" ]]; then
+        yaml_violations=$(echo "$yaml_raw" | while IFS= read -r line; do
+          y_line=$(echo "$line" | sed -E 's/^[^:]*:([0-9]+):[0-9]+: .*/\1/' 2>/dev/null) || y_line="0"
+          y_col=$(echo "$line" | sed -E 's/^[^:]*:[0-9]+:([0-9]+): .*/\1/' 2>/dev/null) || y_col="0"
+          y_code=$(echo "$line" | grep -oE '\([^)]+\)' | tr -d '()' | head -1) || y_code="yaml-error"
+          y_msg=$(echo "$line" | sed -E 's/^[^:]*:[0-9]+:[0-9]+: \[[a-z]+\] //' | sed -E 's/ \([^)]+\)$//' 2>/dev/null) || y_msg="$line"
+          [[ -n "$y_code" ]] && echo "{\"file\":\"$file_path\",\"line\":${y_line:-0},\"column\":${y_col:-0},\"code\":\"$y_code\",\"message\":$(echo "$y_msg" | jq -Rs .),\"linter\":\"yamllint\"}"
+        done | jq -s '.' 2>/dev/null) || yaml_violations="[]"
+        merge_violations "$yaml_violations"
+      fi
+    fi
+  fi
+
+  # ── JSON: syntax check ──────────────────────────────────────
+
+  if [[ "$ext" == "json" ]]; then
+    if ! jq empty "$file_path" 2>/dev/null; then
+      json_err=$(jq empty "$file_path" 2>&1 || true)
+      json_violations=$(jq -n --arg f "$file_path" --arg m "$json_err" \
+        '[{file: $f, line: 0, column: 0, code: "JSON_SYNTAX", message: $m, linter: "jq"}]' \
+        2>/dev/null) || json_violations="[]"
+      merge_violations "$json_violations"
+    fi
+  fi
+
+  # ── Check violation count ───────────────────────────────────
+
+  violation_count=$(echo "$collected_violations" | jq 'length' 2>/dev/null) || violation_count=0
+  all_codes=""
+  if [[ "$violation_count" -gt 0 ]]; then
+    all_codes=$(echo "$collected_violations" | jq -r '[.[].code] | sort | unique | join(", ")' 2>/dev/null) || all_codes=""
+  fi
+}
+
+run_phase2
 
 if [[ "$violation_count" -eq 0 ]]; then
   exit_ok
 fi
+# ── Testing bypass ──────────────────────────────────────────
 
-all_codes=$(echo "$collected_violations" | jq -r '[.[].code] | sort | unique | join(", ")' 2>/dev/null) || all_codes=""
+if [[ "${HOOK_SKIP_SUBPROCESS:-}" == "1" ]]; then
+  exit_block "$violation_count violation(s): $all_codes. Fix them." "$all_codes"
+fi
 
 # ════════════════════════════════════════════════════════════
 # PHASE 3: Delegate to subprocess
@@ -379,7 +396,7 @@ if [[ -n "$claude_cmd" ]]; then
   fi
 
   # Derive disallowed tools: full universe minus allowed
-  all_tools="Edit,Read,Write,Bash,Glob,Grep,WebFetch,WebSearch,NotebookEdit,AskUserQuestion"
+  all_tools="Edit,Read,Write,Bash,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task,AskUserQuestion,EnterPlanMode,ExitPlanMode"
   disallowed_tools=""
   IFS=',' read -ra all_arr <<< "$all_tools"
   for t in "${all_arr[@]}"; do
@@ -414,67 +431,11 @@ fi
 # PHASE 4: Re-verify (re-run Phase 1 + Phase 2)
 # ════════════════════════════════════════════════════════════
 
-# Re-format
-if [[ "$ext" == "rs" ]]; then
-  cargo fmt --all 2>/dev/null || true
-fi
-if [[ "$ext" == "toml" ]] && command -v taplo >/dev/null 2>&1; then
-  taplo fmt "$file_path" 2>/dev/null || true
-fi
-if [[ "$ext" == "md" ]] && command -v markdownlint-cli2 >/dev/null 2>&1; then
-  markdownlint-cli2 --no-globs --fix "$file_path" 2>/dev/null || true
-fi
-if [[ "$ext" == "json" ]]; then
-  if tmp=$(jq '.' "$file_path" 2>/dev/null); then
-    echo "$tmp" > "$file_path"
-  fi
-fi
+run_phase1
+run_phase2
 
-# Re-collect violation codes
-remaining_codes=""
-
-if [[ "$ext" == "rs" ]] || [[ "$ext" == "toml" ]]; then
-  # Bust clippy's incremental cache for re-verify
-  touch "$file_path" 2>/dev/null || true
-  rerun_clippy=$(cargo clippy --all-targets --all-features --message-format=json -- -D warnings 2>/dev/null) || true
-  rc=$(echo "$rerun_clippy" | \
-    jq -r 'select(.reason == "compiler-message") | select(.message.code != null) | .message.code.code' 2>/dev/null | \
-    sort -u | paste -sd ', ' -) || rc=""
-  [[ -n "$rc" ]] && remaining_codes="$rc"
-fi
-
-if [[ "$ext" == "toml" ]] && command -v taplo >/dev/null 2>&1; then
-  rerun_taplo=$(taplo lint "$file_path" 2>&1) || true
-  if [[ -n "$rerun_taplo" ]] && echo "$rerun_taplo" | grep -qi "error\|invalid"; then
-    remaining_codes="${remaining_codes:+$remaining_codes, }TOML_SYNTAX"
-  fi
-fi
-
-if [[ "$ext" == "md" ]] && command -v markdownlint-cli2 >/dev/null 2>&1; then
-  rerun_md=$(markdownlint-cli2 --no-globs "$file_path" 2>&1) || true
-  if [[ -n "$rerun_md" ]]; then
-    md_codes=$(echo "$rerun_md" | grep -oE 'MD[0-9]+(/[a-z-]+)?' | sort -u | paste -sd ', ' -) || md_codes=""
-    [[ -n "$md_codes" ]] && remaining_codes="${remaining_codes:+$remaining_codes, }$md_codes"
-  fi
-fi
-
-if [[ "$ext" == "yaml" || "$ext" == "yml" ]] && command -v yamllint >/dev/null 2>&1; then
-  rerun_yaml=$(yamllint -f parsable "$file_path" 2>&1) || true
-  if [[ -n "$rerun_yaml" ]]; then
-    yaml_codes=$(echo "$rerun_yaml" | grep -oE '\([^)]+\)' | tr -d '()' | sort -u | paste -sd ', ' -) || yaml_codes=""
-    [[ -n "$yaml_codes" ]] && remaining_codes="${remaining_codes:+$remaining_codes, }$yaml_codes"
-  fi
-fi
-
-if [[ "$ext" == "json" ]]; then
-  if ! jq empty "$file_path" 2>/dev/null; then
-    remaining_codes="${remaining_codes:+$remaining_codes, }JSON_SYNTAX"
-  fi
-fi
-
-if [[ -n "$remaining_codes" ]]; then
-  code_count=$(echo "$remaining_codes" | tr ',' '\n' | wc -l | tr -d ' ')
-  exit_block "$code_count violation(s): $remaining_codes. Fix them." "$remaining_codes"
+if [[ "$violation_count" -gt 0 ]]; then
+  exit_block "$violation_count violation(s): $all_codes. Fix them." "$all_codes"
 fi
 
 exit_ok
