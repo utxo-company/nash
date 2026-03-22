@@ -186,7 +186,8 @@ Make imported-module information truthful enough for Elm-style canonicalization.
 
 **Design choice**:
 
-- Keep interface types in `nash-can`, not `nash-ast`, unless a later consumer proves a better home. Elm keeps interface data separate from canonical AST.
+- Keep interface types in `nash-can`, not `nash-ast`,
+  unless a later consumer proves a better home.
 
 **Verification**:
 
@@ -204,7 +205,10 @@ pub struct Interface<'a> {
     pub binops: &'a [InterfaceBinop<'a>],
 }
 
-pub fn from_module<'a>(bump: &'a Bump, module: &'a CanModule<'a>) -> Interface<'a> {
+pub fn from_module<'a>(
+    bump: &'a Bump,
+    module: &'a CanModule<'a>,
+) -> Interface<'a> {
     // restrict to public exports here
 }
 ```
@@ -212,7 +216,9 @@ pub fn from_module<'a>(bump: &'a Bump, module: &'a CanModule<'a>) -> Interface<'
 ### Diff 4: Environment scaffolding in `nash-can`
 
 **Purpose**
-Stop treating `Context` as the environment. Build a real canonicalization env from imports plus locals, like Elm’s `Foreign.createInitialEnv` + `Local.add`.
+Build a real canonicalization env from imports plus
+locals, like Elm’s `Foreign.createInitialEnv` +
+`Local.add`.
 
 **Files**:
 
@@ -269,14 +275,17 @@ fn create_initial_env<'a>(
 ### Diff 5: Local validation pass and minimal `nash-ast` truthfulness cleanup
 
 **Purpose**
-Port Elm’s structural validations that belong to the local declaration/type layer, and only then make any AST cleanup proven necessary.
+Port Elm’s structural validations for the local
+declaration/type layer, then make any proven-necessary
+AST cleanup.
 
 **Files**:
 
 - `crates/nash-can/src/environment/local.rs`
 - `crates/nash-can/src/environment/dups.rs`
 - `crates/nash-can/src/error.rs`
-- maybe `crates/nash-ast/src/lib.rs` if validation work proves the current declaration tail or metadata names are misleading
+- maybe `crates/nash-ast/src/lib.rs` if validation
+  proves current declaration names are misleading
 
 **Changes**:
 
@@ -289,12 +298,14 @@ Port Elm’s structural validations that belong to the local declaration/type la
   - export lists / explicit import exposure lists
 - Check alias cycles.
 - Check type-variable binding and arity rules.
-- Only change `nash-ast` if this pass proves a real semantic mismatch. Current default is to keep the AST stable and not chase superficial Elm naming.
+- Only change `nash-ast` if this pass proves a real
+  semantic mismatch. Default: keep AST stable.
 
 **Important constraint**:
 
 - Do not add Elm effects/ports AST nodes.
-- Do not rename `Decls::Empty` just for parity. Rename only if the implementation proves that the current name lies about semantics.
+- Do not rename `Decls::Empty` just for parity. Rename
+  only if the name lies about semantics.
 
 **Verification**:
 
@@ -328,7 +339,8 @@ Finish the type/pattern layer so value bodies can be canonicalized correctly.
   - `crates/nash-can/src/pattern.rs`
   - `crates/nash-can/src/types.rs`
 - `crates/nash-can/src/error.rs`
-- `crates/nash-ast/src/lib.rs` only if a concrete type/pattern gap appears during implementation
+- `crates/nash-ast/src/lib.rs` only if a concrete
+  type/pattern gap appears during implementation
 
 **Changes**:
 
@@ -354,7 +366,11 @@ fn canonicalize_pattern<'a>(
     pattern: &'a Located<SourcePattern<'a>>,
 ) -> Result<&'a Located<CanPattern<'a>>, Error> {
     let value = match &pattern.value {
-        SourcePattern::Ctor { name, args, .. } => canonicalize_ctor_pattern(bump, env, *name, args, pattern.region)?,
+        SourcePattern::Ctor { name, args, .. } => {
+            canonicalize_ctor_pattern(
+                bump, env, *name, args, pattern.region,
+            )?
+        }
         SourcePattern::Var(name) => CanPattern::Var(name),
         _ => canonicalize_pattern_shape(bump, env, &pattern.value, pattern.region)?,
     };
@@ -362,58 +378,52 @@ fn canonicalize_pattern<'a>(
 }
 ```
 
-### Diff 7 prereqs (from Diff 4 gap analysis)
+### Diff 7: Expression canonicalization and operator desugaring — DONE
 
-**Gap 2:** Add `field: &'a str` to `nash_ast::FieldUpdate` so record updates carry field identity.
+Implemented expression canonicalization with:
 
-**Gap 5:** Add warnings channel — `CanResult { module, warnings: Vec<Warning> }` as return type of `canonicalize`. Emit `UnusedVariable`, `UnusedImport`, `MissingTypeAnnotation` during expression canonicalization.
+- `expression.rs`: full `canonicalize_expr` for all 19 source expression variants
+- Variable resolution (`find_var`/`find_var_qual`) with `PossibleNames` suggestions
+- Constructor annotation synthesis (`to_var_ctor`) from `Ctor::Union` type vars
+- Binop shunting-yard precedence parser (`build_tree_rec`)
+- Let canonicalization with SCC cycle detection via `scc::strongly_connected_components`
+- `FreeLocals`/`Uses` tracking with direct/delayed distinction for lambda bodies
+- `verify_bindings` for unused-variable warnings
+- `gather_typed_args`/`peel_result_type` for typed definitions
+- `CanResult { module, warnings }` return type from `canonicalize`
+- `Warning::UnusedVariable` with `WarningContext::{Pattern, Def}`
+- `DuplicatePatternContext<'a>` with `FuncArgs(&'a str)` carrying function name
+- `Var::Foreigns` for ambiguous import detection
+- `Env::add_locals` for clone-on-scope-extension
+- `Env::find_binop` with `NotFoundBinop`/`AmbiguousBinop` errors
+- Error variants: `NotFoundVar`, `AmbiguousVar`, `BinopConflict`, `Shadowing`,
+  `RecursiveLet`, `AnnotationTooShort`
+- `PossibleNames` populated in `NotFoundType`, `NotFoundCtor`, `NotFoundVar`
+- 26 new snapshot tests (18 positive, 6 error, 2 warning), 1423 total passing
 
-### Diff 7: Expression canonicalization and operator desugaring
+Prereqs completed: `FieldUpdate.field`, optional `VarOperator`/`Binop` annotations,
+`type_vars` on `Ctor::Union`, `symbol` on env `Binop`.
 
-**Purpose**
-Port the core expression layer so `nash-can` actually resolves names and desugars syntax, as SPEC Phase 3 promises.
-
-**Files**:
-
-- new file, likely `crates/nash-can/src/expression.rs`
-- `crates/nash-can/src/module.rs`
-- `crates/nash-can/src/error.rs`
-- `crates/nash-can/src/snapshots/*`
-
-**Changes**:
-
-- Canonicalize vars to local vs top-level vs constructor vs operator references.
-- Resolve qualified and unqualified names through the env.
-- Desugar source `Expr::BinOps` chains into canonical `Expr::Binop` trees using precedence/associativity.
-- Canonicalize let/case/access/update/record/tuple/list/call/lambda/if.
-- Preserve region information.
-
-**Verification**:
-
-- Targeted snapshots for operator precedence/associativity, name resolution, let/case lowering
-- `cargo test -p nash-can`
-
-**Representative snippet**:
-
-```rust
-match &expr.value {
-    SourceExpr::BinOps { operands, last } => {
-        desugar_binops(bump, env, operands, last)
-    }
-    SourceExpr::Var { kind: _, name } => resolve_var(env, *name, expr.region),
-    SourceExpr::VarQual { module, name, .. } => resolve_qualified_var(env, module, name, expr.region),
-    _ => canonicalize_expr_node(bump, env, expr),
-}
-```
+Deferred to type inference: `VarOperator.annotation`, `Binop.annotation`,
+`Var::Foreign` annotation.
+Deferred to prelude design: `List`/`Int`/`Bool`/`String` pre-seeding in env.
 
 ### Diff 8 detail (from Diff 4 gap analysis)
 
-**Gap 4:** Two-phase SCC cycle detection. Track `Uses { direct: u32, delayed: u32 }` per free local. Lambda bodies increment `delayed`; else increments `direct`. Phase 1 SCC (all deps) -> `DeclareRec` groups. Phase 2 SCC (direct-only, within cyclic groups) -> `Error::RecursiveDecl` for zero-arg values in tight cycles. Functions allowed in cycles because their bodies are deferred.
+**Gap 4:** Two-phase SCC cycle detection.
+Track `Uses { direct, delayed }` per free local.
+Lambda bodies increment `delayed`; else `direct`.
+Phase 1 SCC (all deps) -> `DeclareRec` groups.
+Phase 2 SCC (direct-only, within cyclic groups) ->
+`Error::RecursiveDecl` for zero-arg values in tight
+cycles. Functions allowed because bodies are deferred.
 
 ### Diff 8: Value canonicalization, SCC grouping, and exported interface collection
 
 **Purpose**
-Finish the phase boundary promised by SPEC: value canonicalization, dependency ordering, and public interface collection.
+Finish the SPEC phase boundary: value
+canonicalization, dependency ordering, and
+public interface collection.
 
 **Files**:
 
@@ -427,13 +437,18 @@ Finish the phase boundary promised by SPEC: value canonicalization, dependency o
 
 - Replace `canonicalize_decls(... todo!)` with Elm-style value canonicalization.
 - Compute declaration SCCs and lower to `Decls::{Declare, DeclareRec, ...}`.
-- Canonicalize explicit exports against the full env, including values/binops/types/union privacy.
+- Canonicalize explicit exports against the full
+  env (values/binops/types/union privacy).
 - Produce a trustworthy module interface from the finished canonical module.
-- After this lands, plan the driver follow-up to serialize the richer interface instead of the current export-only placeholder.
+- After this lands, plan the driver follow-up to
+  serialize the richer interface instead of the
+  current export-only placeholder.
 
 **Verification**:
 
-- Positive and negative snapshots for recursive groups, bad recursive cycles, export validation, imported value use
+- Positive and negative snapshots for recursive
+  groups, bad cycles, export validation,
+  imported value use
 - `cargo test -p nash-can`
 
 **Representative snippet**:
@@ -451,29 +466,40 @@ fn canonicalize_decls<'a>(
 
 ## Recommended order
 
-1. Diff 1: public API cutover
-2. Diff 2: error surface hardening
-3. Diff 3: interface model expansion
-4. Diff 4: environment scaffolding
-5. Diff 5: local validation
-6. Diff 6: pattern/type annotation canonicalization
-7. Diff 7: expression canonicalization
-8. Diff 8: values, SCCs, exports, interface collection
+1. ~~Diff 1: public API cutover~~ **done**
+2. ~~Diff 2: error surface hardening~~ **done**
+3. ~~Diff 3: interface model expansion~~ **done**
+4. ~~Diff 4: environment scaffolding~~ **done**
+5. ~~Diff 5: local validation~~ **done**
+6. ~~Diff 6: pattern/type annotation canonicalization~~ **done**
+7. ~~Diff 7: expression canonicalization~~ **done**
+8. ~~Diff 8: values, SCCs, exports, interface collection~~ **done**
 
 ## What should intentionally stay different from Elm
 
 - No `Effects`, `Port`, or `Manager` nodes in `nash-ast`.
 - No effect/port canonicalization entrypoints in `nash-can`.
 - Keep the arena parameter in public Rust APIs.
-- Keep the smart-contract language scope: canonicalization should support the current Nash source language, not Elm browser/runtime features.
-- Stop after every diff no matter what; once one diff is implemented and verified, pause and do not begin the next diff in the same session or PR.
+- Keep the smart-contract language scope:
+  support Nash source, not Elm browser/runtime.
+- Stop after every diff; once implemented and
+  verified, do not begin the next in the same
+  session or PR.
 
 ## Risks to watch
 
-- Interface model duplication: `nash-can::Interface` and `nash-driver::Interface` currently describe different truths. Do not let both evolve independently for long.
-- Error taxonomy drift: if errors are added ad hoc while implementing values/exprs, the result will be a grab bag instead of a coherent canonicalization contract.
-- AST churn without proof: most of the remaining work is implementation in `nash-can`, not large new surface in `nash-ast`.
+- Interface model duplication:
+  `nash-can::Interface` and
+  `nash-driver::Interface` describe different
+  truths. Do not let both evolve independently.
+- Error taxonomy drift: ad hoc errors during
+  value/expr work produce a grab bag instead of
+  a coherent canonicalization contract.
+- AST churn without proof: remaining work is
+  implementation in `nash-can`, not large new
+  surface in `nash-ast`.
 
-## Immediate next diff
+## Status
 
-Start with Diff 1. It is low blast radius, fixes a real Elm boundary drift, and makes all following work happen behind the correct public entrypoint.
+All 8 diffs are complete. Canonicalization is
+feature-complete for the core language.
