@@ -1,6 +1,6 @@
 ---
 source: crates/nash-can/src/module.rs
-description: "Code:\n\nmodule Main exposing (..)\n\nf x = g x\n\ng y = y\n"
+description: "Code:\n\nmodule Main exposing (..)\n\nf x = g x\n\ng x = f x\n"
 ---
 Module {
     name: ModuleName {
@@ -31,7 +31,7 @@ Module {
             },
         },
     ),
-    decls: Declare {
+    decls: DeclareRec {
         definition: Def {
             name: Located {
                 region: Region {
@@ -59,7 +59,7 @@ Module {
                         },
                     },
                     value: Var(
-                        "y",
+                        "x",
                     ),
                 },
             ],
@@ -71,16 +71,53 @@ Module {
                     },
                     end: Position {
                         line: 5,
-                        column: 8,
+                        column: 10,
                     },
                 },
-                value: VarLocal(
-                    "y",
-                ),
+                value: Call {
+                    function: Located {
+                        region: Region {
+                            start: Position {
+                                line: 5,
+                                column: 7,
+                            },
+                            end: Position {
+                                line: 5,
+                                column: 8,
+                            },
+                        },
+                        value: VarTopLevel(
+                            QualifiedName {
+                                home: ModuleName {
+                                    package: None,
+                                    name: "Main",
+                                },
+                                name: "f",
+                            },
+                        ),
+                    },
+                    arguments: [
+                        Located {
+                            region: Region {
+                                start: Position {
+                                    line: 5,
+                                    column: 9,
+                                },
+                                end: Position {
+                                    line: 5,
+                                    column: 10,
+                                },
+                            },
+                            value: VarLocal(
+                                "x",
+                            ),
+                        },
+                    ],
+                },
             },
         },
-        next: Declare {
-            definition: Def {
+        following: [
+            Def {
                 name: Located {
                     region: Region {
                         start: Position {
@@ -164,8 +201,8 @@ Module {
                     },
                 },
             },
-            next: Empty,
-        },
+        ],
+        next: Empty,
     },
     unions: [],
     aliases: [],

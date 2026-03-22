@@ -195,6 +195,10 @@ pub enum Error<'a> {
         name: &'a Located<&'a str>,
         others: &'a [&'a str],
     },
+    RecursiveDecl {
+        name: &'a Located<&'a str>,
+        others: &'a [&'a str],
+    },
     AnnotationTooShort {
         region: Region,
         name: &'a str,

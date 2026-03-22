@@ -69,18 +69,32 @@ pub fn canonicalize<'a>(
     let mut warnings = Vec::new();
     let decls = canonicalize_decls(bump, &env, module.values, &mut warnings)?;
     let binops = canonicalize_binops(bump, module.binops);
-    let exports = canonicalize_exports(bump, module)?;
+    let exports = canonicalize_exports(bump, &env, module)?;
+
+    let can_module = CanModule {
+        name: env.home,
+        exports,
+        docs: module.docs,
+        decls,
+        unions,
+        aliases,
+        binops,
+    };
+
+    // Check for unused imports
+    let used_modules = collect_used_modules(&can_module);
+    for import in module.imports {
+        let module_name = import.import.value;
+        if !used_modules.contains(module_name) {
+            warnings.push(Warning::UnusedImport {
+                region: import.import.region,
+                module_name,
+            });
+        }
+    }
 
     Ok(CanResult {
-        module: CanModule {
-            name: env.home,
-            exports,
-            docs: module.docs,
-            decls,
-            unions,
-            aliases,
-            binops,
-        },
+        module: can_module,
         warnings,
     })
 }
@@ -96,10 +110,10 @@ fn canonicalize_decls<'a>(
     }
 
     let mut errors = Vec::new();
-    let mut defs: Vec<&'a nash_ast::Def<'a>> = Vec::with_capacity(values.len());
+    let mut nodes: Vec<NodeOne<'a>> = Vec::with_capacity(values.len());
     for value in values {
-        match canonicalize_value(bump, env, value, warnings) {
-            Ok(def) => defs.push(def),
+        match to_node_one(bump, env, value, warnings) {
+            Ok(node) => nodes.push(node),
             Err(errs) => errors.extend(errs),
         }
     }
@@ -107,23 +121,107 @@ fn canonicalize_decls<'a>(
         return Err(errors);
     }
 
-    // Build Declare chain (all non-recursive for now)
+    let top_level_names: BTreeSet<&str> = nodes.iter().map(|n| n.name).collect();
+
+    // Phase 1: SCC on ALL dependencies
+    let names: Vec<&str> = nodes.iter().map(|n| n.name).collect();
+    let all_edges: BTreeMap<&str, Vec<&str>> = nodes
+        .iter()
+        .map(|node| {
+            let deps: Vec<&str> = node
+                .free_locals
+                .keys()
+                .filter(|k| top_level_names.contains(*k))
+                .copied()
+                .collect();
+            (node.name, deps)
+        })
+        .collect();
+    let phase1_sccs = scc::strongly_connected_components(&names, &all_edges);
+
+    let node_map: BTreeMap<&str, &NodeOne<'a>> = nodes.iter().map(|n| (n.name, n)).collect();
+
     let mut decls: &'a Decls<'a> = bump.alloc(Decls::Empty);
-    for def in defs.into_iter().rev() {
-        decls = bump.alloc(Decls::Declare {
-            definition: def,
-            next: decls,
-        });
+    for scc_group in phase1_sccs.into_iter().rev() {
+        match scc_group {
+            scc::Scc::Acyclic(name) => {
+                decls = bump.alloc(Decls::Declare {
+                    definition: node_map[name].def,
+                    next: decls,
+                });
+            }
+            scc::Scc::Cyclic(group_names) => {
+                // Phase 2: SCC on DIRECT deps within cyclic group
+                let group_set: BTreeSet<&str> = group_names.iter().copied().collect();
+                let direct_edges: BTreeMap<&str, Vec<&str>> = group_names
+                    .iter()
+                    .map(|&name| {
+                        let node = node_map[name];
+                        let deps = if node.has_args {
+                            vec![] // functions: body is delayed
+                        } else {
+                            node.free_locals
+                                .iter()
+                                .filter(|(k, uses)| group_set.contains(*k) && uses.direct > 0)
+                                .map(|(k, _)| *k)
+                                .collect()
+                        };
+                        (name, deps)
+                    })
+                    .collect();
+
+                let phase2_sccs = scc::strongly_connected_components(&group_names, &direct_edges);
+
+                let mut rec_defs: Vec<&'a nash_ast::Def<'a>> = Vec::new();
+                for sub_scc in &phase2_sccs {
+                    match sub_scc {
+                        scc::Scc::Acyclic(name) => {
+                            rec_defs.push(node_map[name].def);
+                        }
+                        scc::Scc::Cyclic(bad_names) => {
+                            let first = bad_names[0];
+                            let def_name = def_located_name(node_map[first].def);
+                            let others: Vec<&str> = bad_names[1..].to_vec();
+                            return Err(vec![Error::RecursiveDecl {
+                                name: def_name,
+                                others: bump.alloc_slice_fill_iter(others),
+                            }]);
+                        }
+                    }
+                }
+
+                if let Some((first, rest)) = rec_defs.split_first() {
+                    decls = bump.alloc(Decls::DeclareRec {
+                        definition: first,
+                        following: bump.alloc_slice_fill_iter(rest.iter().copied()),
+                        next: decls,
+                    });
+                }
+            }
+        }
     }
     Ok(decls)
 }
 
-fn canonicalize_value<'a>(
+fn def_located_name<'a>(def: &'a nash_ast::Def<'a>) -> &'a Located<&'a str> {
+    match def {
+        nash_ast::Def::Def { name, .. } | nash_ast::Def::TypedDef { name, .. } => name,
+    }
+}
+
+struct NodeOne<'a> {
+    def: &'a nash_ast::Def<'a>,
+    name: &'a str,
+    has_args: bool,
+    free_locals: expression::FreeLocals<'a>,
+}
+
+fn to_node_one<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
     value: &'a Located<SourceValue<'a>>,
     warnings: &mut Vec<Warning<'a>>,
-) -> Result<&'a nash_ast::Def<'a>, Vec<Error<'a>>> {
+) -> Result<NodeOne<'a>, Vec<Error<'a>>> {
     let src = &value.value;
     let mut arg_bindings = pattern::Bindings::new();
     let mut can_args = Vec::with_capacity(src.arguments.len());
@@ -142,33 +240,39 @@ fn canonicalize_value<'a>(
     let can_body =
         expression::canonicalize_expr(bump, &body_env, src.body, &mut free_locals, warnings)?;
 
-    // verify_bindings for function args
-    expression::verify_bindings(
+    let outer_free = expression::verify_bindings(
         WarningContext::Pattern,
         &arg_bindings,
         free_locals,
         warnings,
     );
 
-    if let Some(ann) = src.annotation {
+    let def = if let Some(ann) = src.annotation {
         let annotation = types::to_annotation(bump, env, ann)?;
         let typed_args =
             expression::gather_typed_args(bump, src.name.value, &can_args, annotation)?;
         let result_type = expression::peel_result_type(annotation, can_args.len());
-        Ok(bump.alloc(nash_ast::Def::TypedDef {
+        bump.alloc(nash_ast::Def::TypedDef {
             name: src.name,
             free_vars: annotation.free_vars,
             args: typed_args,
             body: can_body,
             typ: result_type,
-        }))
+        })
     } else {
-        Ok(bump.alloc(nash_ast::Def::Def {
+        bump.alloc(nash_ast::Def::Def {
             name: src.name,
             args: bump.alloc_slice_fill_iter(can_args),
             body: can_body,
-        }))
-    }
+        })
+    };
+
+    Ok(NodeOne {
+        def,
+        name: src.name.value,
+        has_args: !src.arguments.is_empty(),
+        free_locals: outer_free,
+    })
 }
 
 fn canonicalize_unions<'a>(
@@ -485,6 +589,7 @@ fn collect_free_type_vars<'a>(typ: &Located<SourceType<'a>>, vars: &mut BTreeMap
 
 fn canonicalize_exports<'a>(
     bump: &'a Bump,
+    env: &Env<'a>,
     module: &SourceModule<'a>,
 ) -> Result<Exports<'a>, Vec<Error<'a>>> {
     match module.exports.value {
@@ -503,7 +608,7 @@ fn canonicalize_exports<'a>(
                 exposed
                     .iter()
                     .copied()
-                    .map(|e| canonicalize_exposed(bump, module, e)),
+                    .map(|e| canonicalize_exposed(bump, env, e)),
             )?;
             Ok(Exports::Explicit(exports))
         }
@@ -549,26 +654,25 @@ fn canonicalize_precedence(precedence: SourcePrecedence) -> CanPrecedence {
 
 fn canonicalize_exposed<'a>(
     bump: &'a Bump,
-    module: &SourceModule<'a>,
+    env: &Env<'a>,
     exposed: &Exposed<'a>,
 ) -> Result<&'a Located<Export<'a>>, Vec<Error<'a>>> {
     Ok(bump.alloc(Located::at(
         exposed_region(exposed),
-        canonicalize_export(module, exposed)?,
+        canonicalize_export(env, exposed)?,
     )))
 }
 
 fn canonicalize_export<'a>(
-    module: &SourceModule<'a>,
+    env: &Env<'a>,
     exposed: &Exposed<'a>,
 ) -> Result<Export<'a>, Vec<Error<'a>>> {
     Ok(match exposed {
         Exposed::Lower(name) => {
-            if module
-                .values
-                .iter()
-                .any(|value| value.value.name.value == name.value)
-            {
+            if matches!(
+                env.vars.get(name.value),
+                Some(environment::Var::TopLevel(_))
+            ) {
                 Export::Value(name.value)
             } else {
                 return Err(vec![Error::ExportNotFound {
@@ -578,20 +682,17 @@ fn canonicalize_export<'a>(
                 }]);
             }
         }
-        Exposed::Upper { name, privacy } => {
-            if module
-                .unions
-                .iter()
-                .any(|union| union.value.name.value == name.value)
+        Exposed::Upper { name, privacy } => match env.types.get(name.value) {
+            Some(environment::Info::Specific(home, environment::Type::Union { .. }))
+                if *home == env.home =>
             {
                 match privacy {
                     Privacy::Public(_) => Export::UnionOpen(name.value),
                     Privacy::Private => Export::UnionClosed(name.value),
                 }
-            } else if module
-                .aliases
-                .iter()
-                .any(|alias| alias.value.name.value == name.value)
+            }
+            Some(environment::Info::Specific(home, environment::Type::Alias { .. }))
+                if *home == env.home =>
             {
                 match privacy {
                     Privacy::Public(region) => {
@@ -602,25 +703,25 @@ fn canonicalize_export<'a>(
                     }
                     Privacy::Private => Export::Alias(name.value),
                 }
-            } else {
+            }
+            _ => {
                 return Err(vec![Error::ExportNotFound {
                     region: name.region,
                     kind: VarKind::BadType,
                     name: name.value,
                 }]);
             }
-        }
-        Exposed::Operator { region, op } => {
-            if module.binops.iter().any(|binop| binop.value.op == *op) {
-                Export::Binop(op)
-            } else {
+        },
+        Exposed::Operator { region, op } => match env.binops.get(*op) {
+            Some(environment::Info::Specific(home, _)) if *home == env.home => Export::Binop(op),
+            _ => {
                 return Err(vec![Error::ExportNotFound {
                     region: *region,
                     kind: VarKind::BadOp,
                     name: op,
                 }]);
             }
-        }
+        },
     })
 }
 
@@ -637,6 +738,307 @@ fn exposed_region(exposed: &Exposed<'_>) -> Region {
         } => name.region,
         Exposed::Operator { region, .. } => *region,
     }
+}
+
+// --- Unused import detection ---
+
+fn collect_used_modules<'a>(module: &CanModule<'a>) -> BTreeSet<&'a str> {
+    let mut used = BTreeSet::new();
+    let home = module.name;
+    collect_from_decls(module.decls, home, &mut used);
+    for union in module.unions {
+        for ctor in union.value.ctors {
+            for arg in ctor.arguments {
+                collect_from_type(&arg.value, home, &mut used);
+            }
+        }
+    }
+    for alias in module.aliases {
+        collect_from_type(&alias.value.typ.value, home, &mut used);
+    }
+    used
+}
+
+fn add_if_foreign<'a>(
+    home: ModuleName<'a>,
+    reference_home: ModuleName<'a>,
+    used: &mut BTreeSet<&'a str>,
+) {
+    if reference_home != home {
+        used.insert(reference_home.name);
+    }
+}
+
+fn collect_from_decls<'a>(decls: &Decls<'a>, home: ModuleName<'a>, used: &mut BTreeSet<&'a str>) {
+    match decls {
+        Decls::Declare { definition, next } => {
+            collect_from_def(definition, home, used);
+            collect_from_decls(next, home, used);
+        }
+        Decls::DeclareRec {
+            definition,
+            following,
+            next,
+        } => {
+            collect_from_def(definition, home, used);
+            for def in *following {
+                collect_from_def(def, home, used);
+            }
+            collect_from_decls(next, home, used);
+        }
+        Decls::Empty => {}
+    }
+}
+
+fn collect_from_def<'a>(
+    def: &nash_ast::Def<'a>,
+    home: ModuleName<'a>,
+    used: &mut BTreeSet<&'a str>,
+) {
+    match def {
+        nash_ast::Def::Def { body, args, .. } => {
+            for arg in *args {
+                collect_from_pattern(&arg.value, home, used);
+            }
+            collect_from_expr(&body.value, home, used);
+        }
+        nash_ast::Def::TypedDef {
+            args, body, typ, ..
+        } => {
+            for arg in *args {
+                collect_from_pattern(&arg.pattern.value, home, used);
+                collect_from_type(&arg.typ.value, home, used);
+            }
+            collect_from_expr(&body.value, home, used);
+            collect_from_type(&typ.value, home, used);
+        }
+    }
+}
+
+fn collect_from_expr<'a>(
+    expr: &nash_ast::Expr<'a>,
+    home: ModuleName<'a>,
+    used: &mut BTreeSet<&'a str>,
+) {
+    use nash_ast::Expr::*;
+    match expr {
+        VarLocal(_) | Str(_) | Int(_) | Accessor(_) | Unit => {}
+        VarTopLevel(q) => add_if_foreign(home, q.home, used),
+        VarConstructor {
+            reference,
+            annotation,
+            ..
+        } => {
+            add_if_foreign(home, reference.home, used);
+            collect_from_annotation(annotation, home, used);
+        }
+        VarOperator {
+            reference,
+            annotation,
+            ..
+        } => {
+            add_if_foreign(home, reference.home, used);
+            if let Some(ann) = annotation {
+                collect_from_annotation(ann, home, used);
+            }
+        }
+        Binop {
+            reference,
+            left,
+            right,
+            annotation,
+            ..
+        } => {
+            add_if_foreign(home, reference.home, used);
+            if let Some(ann) = annotation {
+                collect_from_annotation(ann, home, used);
+            }
+            collect_from_expr(&left.value, home, used);
+            collect_from_expr(&right.value, home, used);
+        }
+        List(items) => {
+            for item in *items {
+                collect_from_expr(&item.value, home, used);
+            }
+        }
+        Negate(e) => collect_from_expr(&e.value, home, used),
+        Lambda { parameters, body } => {
+            for p in *parameters {
+                collect_from_pattern(&p.value, home, used);
+            }
+            collect_from_expr(&body.value, home, used);
+        }
+        Call {
+            function,
+            arguments,
+        } => {
+            collect_from_expr(&function.value, home, used);
+            for a in *arguments {
+                collect_from_expr(&a.value, home, used);
+            }
+        }
+        If {
+            branches,
+            final_else,
+        } => {
+            for b in *branches {
+                collect_from_expr(&b.condition.value, home, used);
+                collect_from_expr(&b.then_branch.value, home, used);
+            }
+            collect_from_expr(&final_else.value, home, used);
+        }
+        Let { definition, body } => {
+            collect_from_def(definition, home, used);
+            collect_from_expr(&body.value, home, used);
+        }
+        LetRec { definitions, body } => {
+            for d in *definitions {
+                collect_from_def(d, home, used);
+            }
+            collect_from_expr(&body.value, home, used);
+        }
+        LetDestruct {
+            pattern,
+            value,
+            body,
+        } => {
+            collect_from_pattern(&pattern.value, home, used);
+            collect_from_expr(&value.value, home, used);
+            collect_from_expr(&body.value, home, used);
+        }
+        Case {
+            scrutinee,
+            branches,
+        } => {
+            collect_from_expr(&scrutinee.value, home, used);
+            for b in *branches {
+                collect_from_pattern(&b.pattern.value, home, used);
+                collect_from_expr(&b.body.value, home, used);
+            }
+        }
+        Access { record, .. } => collect_from_expr(&record.value, home, used),
+        Update { base, fields, .. } => {
+            collect_from_expr(&base.value, home, used);
+            for f in *fields {
+                collect_from_expr(&f.value.value, home, used);
+            }
+        }
+        Record(fields) => {
+            for f in *fields {
+                collect_from_expr(&f.value.value, home, used);
+            }
+        }
+        Tuple {
+            first,
+            second,
+            rest,
+        } => {
+            collect_from_expr(&first.value, home, used);
+            collect_from_expr(&second.value, home, used);
+            for r in *rest {
+                collect_from_expr(&r.value, home, used);
+            }
+        }
+    }
+}
+
+fn collect_from_pattern<'a>(
+    pat: &nash_ast::Pattern<'a>,
+    home: ModuleName<'a>,
+    used: &mut BTreeSet<&'a str>,
+) {
+    use nash_ast::Pattern::*;
+    match pat {
+        Anything | Var(_) | Str(_) | Int(_) | Unit | Record(_) => {}
+        Constructor(ctor) => {
+            add_if_foreign(home, ctor.reference.home, used);
+            for arg in ctor.arguments {
+                collect_from_type(&arg.typ.value, home, used);
+                collect_from_pattern(&arg.pattern.value, home, used);
+            }
+        }
+        Alias { pattern, .. } => collect_from_pattern(&pattern.value, home, used),
+        Tuple {
+            first,
+            second,
+            rest,
+        } => {
+            collect_from_pattern(&first.value, home, used);
+            collect_from_pattern(&second.value, home, used);
+            for r in *rest {
+                collect_from_pattern(&r.value, home, used);
+            }
+        }
+        List(items) => {
+            for item in *items {
+                collect_from_pattern(&item.value, home, used);
+            }
+        }
+        Cons { head, tail } => {
+            collect_from_pattern(&head.value, home, used);
+            collect_from_pattern(&tail.value, home, used);
+        }
+    }
+}
+
+fn collect_from_type<'a>(
+    typ: &nash_ast::Type<'a>,
+    home: ModuleName<'a>,
+    used: &mut BTreeSet<&'a str>,
+) {
+    use nash_ast::Type::*;
+    match typ {
+        Var(_) | Unit => {}
+        Lambda { from, to } => {
+            collect_from_type(&from.value, home, used);
+            collect_from_type(&to.value, home, used);
+        }
+        Named { reference, args } => {
+            add_if_foreign(home, reference.home, used);
+            for a in *args {
+                collect_from_type(&a.value, home, used);
+            }
+        }
+        Record { fields, .. } => {
+            for f in *fields {
+                collect_from_type(&f.typ.value, home, used);
+            }
+        }
+        Tuple {
+            first,
+            second,
+            rest,
+        } => {
+            collect_from_type(&first.value, home, used);
+            collect_from_type(&second.value, home, used);
+            for r in *rest {
+                collect_from_type(&r.value, home, used);
+            }
+        }
+        Alias {
+            reference,
+            arguments,
+            target,
+        } => {
+            add_if_foreign(home, reference.home, used);
+            for a in *arguments {
+                collect_from_type(&a.typ.value, home, used);
+            }
+            match target {
+                nash_ast::AliasType::Open(t) | nash_ast::AliasType::Filled(t) => {
+                    collect_from_type(&t.value, home, used);
+                }
+            }
+        }
+    }
+}
+
+fn collect_from_annotation<'a>(
+    ann: &nash_ast::Annotation<'a>,
+    home: ModuleName<'a>,
+    used: &mut BTreeSet<&'a str>,
+) {
+    collect_from_type(&ann.typ.value, home, used);
 }
 
 #[cfg(test)]
@@ -1943,6 +2345,176 @@ mod tests {
                 in
                 2
         "#
+        );
+    }
+
+    // === SCC tests ===
+
+    #[test]
+    fn mutual_recursion_functions() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x = g x
+
+            g x = f x
+        "#
+        );
+    }
+
+    #[test]
+    fn self_recursive_function() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x = f x
+        "#
+        );
+    }
+
+    #[test]
+    fn mixed_recursive_and_non_recursive() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            x = 1
+
+            f a = g a
+
+            g a = f a
+
+            y = 2
+        "#
+        );
+    }
+
+    #[test]
+    fn dependency_ordering() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            b = a
+
+            a = 1
+        "#
+        );
+    }
+
+    #[test]
+    fn value_and_function_in_cycle() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            x = f 1
+
+            f a = x
+        "#
+        );
+    }
+
+    // -- SCC error tests --
+
+    #[test]
+    fn recursive_decl_self_reference() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            x = x
+        "#
+        );
+    }
+
+    #[test]
+    fn recursive_decl_mutual_values() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            x = y
+
+            y = x
+        "#
+        );
+    }
+
+    // === Unused import warning tests ===
+
+    fn value_interface<'a>(
+        bump: &'a Bump,
+        module_name: &'a str,
+        val_name: &'a str,
+    ) -> Interface<'a> {
+        Interface {
+            home: ModuleName {
+                package: None,
+                name: module_name,
+            },
+            values: bump.alloc_slice_fill_iter([crate::interface::InterfaceValue {
+                name: val_name,
+                annotation: None,
+            }]),
+            aliases: &[],
+            unions: &[],
+            binops: &[],
+        }
+    }
+
+    #[test]
+    fn unused_import_warning() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo
+
+            x = 1
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Foo", value_interface(&bump, "Foo", "bar"))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let (_, warnings) = parse_and_canonicalize_with_warnings(&bump, input, context)
+            .expect("expected successful canonicalization");
+        assert!(!warnings.is_empty(), "expected warnings but got none");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(warnings);
+        });
+    }
+
+    #[test]
+    fn used_import_no_warning() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo
+
+            x = Foo.bar
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Foo", value_interface(&bump, "Foo", "bar"))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let (_, warnings) = parse_and_canonicalize_with_warnings(&bump, input, context)
+            .expect("expected successful canonicalization");
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings but got: {warnings:?}"
         );
     }
 }

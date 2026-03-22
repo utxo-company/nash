@@ -8,6 +8,10 @@ pub enum Warning<'a> {
         context: WarningContext,
         name: &'a str,
     },
+    UnusedImport {
+        region: Region,
+        module_name: &'a str,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
