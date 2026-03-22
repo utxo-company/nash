@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "${CLAUDE_PROJECT_DIR:-.}"
 
 # PostToolUse hook: auto-format, lint, and delegate fixes.
 # Triggers for: .rs, .toml, .json, .md, .yaml, .yml

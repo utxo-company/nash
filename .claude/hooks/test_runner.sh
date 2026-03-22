@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "${CLAUDE_PROJECT_DIR:-.}"
 
 # Runs cargo nextest run --fail-fast and returns either:
 # - "All N tests passed" on success
 # - The single failed test with its output on failure
 
-output=$(cargo nextest run --fail-fast 2>&1) || true
-exit_code=${PIPESTATUS[0]:-$?}
+output=$(cargo nextest run --fail-fast 2>&1) && exit_code=0 || exit_code=$?
 
 # Extract summary line: "Summary [  10.357s] 1345 tests run: 1345 passed, 0 skipped"
 summary=$(echo "$output" | grep -E '^\s*Summary' || echo "")
@@ -31,7 +31,7 @@ else
 
     # Show the test's stderr output (between --- STDOUT/STDERR markers)
     # nextest outputs test failure details before the FAIL summary
-    echo "$output" | grep -A 50 "--- STDERR" | head -30 || true
+    echo "$output" | grep -A 50 -- "--- STDERR" | head -30 || true
   else
     # Fallback: show last 20 lines of output
     echo "Test run failed:"

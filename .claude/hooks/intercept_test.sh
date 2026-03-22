@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "${CLAUDE_PROJECT_DIR:-.}"
 
 # PreToolUse hook on Bash: intercepts cargo test/nextest commands
 # and replaces them with our test_runner.sh for clean output.

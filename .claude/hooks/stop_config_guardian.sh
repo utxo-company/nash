@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "${CLAUDE_PROJECT_DIR:-.}"
 
 # Stop hook: defense-in-depth check for modified config files.
 # Uses jj diff to detect changes that slipped past PreToolUse.

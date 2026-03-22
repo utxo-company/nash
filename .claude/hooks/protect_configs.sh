@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd "${CLAUDE_PROJECT_DIR:-.}"
 
 # PreToolUse hook: blocks edits to linter configs and hook infrastructure.
 # Fail-closed — if jq is missing or parsing fails, block the edit.
