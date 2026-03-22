@@ -30,6 +30,8 @@ pub enum Var<'a> {
     TopLevel(Region),
     /// Imported from another module. Annotation deferred.
     Foreign(ModuleName<'a>),
+    /// Ambiguous import: same name imported from multiple modules.
+    Foreigns(ModuleName<'a>, Vec<ModuleName<'a>>),
 }
 
 /// A type in scope (alias or union).
@@ -54,6 +56,7 @@ pub enum Ctor<'a> {
     Union {
         home: ModuleName<'a>,
         type_name: &'a str,
+        type_vars: &'a [&'a str],
         index: u16,
         arity: u16,
         arguments: &'a [&'a Located<CanType<'a>>],
@@ -72,6 +75,7 @@ pub enum Ctor<'a> {
 /// A binary operator in scope.
 #[derive(Clone, Copy, Debug)]
 pub struct Binop<'a> {
+    pub symbol: &'a str,
     pub home: ModuleName<'a>,
     pub function: &'a str,
     pub associativity: Associativity,
@@ -82,6 +86,7 @@ pub struct Binop<'a> {
 ///
 /// Built from imports (foreign) then augmented with local definitions.
 /// Consumed by type, pattern, and expression canonicalization.
+#[derive(Clone)]
 pub struct Env<'a> {
     pub home: ModuleName<'a>,
     pub vars: BTreeMap<&'a str, Var<'a>>,
@@ -133,6 +138,7 @@ impl<'a> Env<'a> {
                 region,
                 prefix: None,
                 name,
+                suggestions: self.possible_ctor_names(bump),
             }]),
         }
     }
@@ -154,6 +160,7 @@ impl<'a> Env<'a> {
                     region,
                     prefix: Some(prefix),
                     name,
+                    suggestions: self.possible_ctor_names(bump),
                 }]
             })?;
         match info {
@@ -166,6 +173,92 @@ impl<'a> Env<'a> {
                 other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
             }]),
         }
+    }
+
+    /// Extend env with local bindings (clone-on-scope-extension).
+    /// Shadows foreign imports silently.
+    /// Errors on re-shadowing a local/top-level.
+    pub fn add_locals(
+        &self,
+        bindings: &std::collections::BTreeMap<&'a str, Region>,
+    ) -> Result<Env<'a>, Vec<Error<'a>>> {
+        let mut new_env = self.clone();
+        let mut errors = Vec::new();
+
+        for (&name, &region) in bindings {
+            match new_env.vars.get(name) {
+                Some(Var::Local(original)) | Some(Var::TopLevel(original)) => {
+                    errors.push(Error::Shadowing {
+                        name,
+                        original: *original,
+                        new: region,
+                    });
+                }
+                _ => {
+                    new_env.vars.insert(name, Var::Local(region));
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(new_env)
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Look up a binop by symbol. Mirrors Elm's `Env.findBinop`.
+    pub fn find_binop(
+        &self,
+        bump: &'a Bump,
+        region: Region,
+        symbol: &'a str,
+    ) -> Result<Binop<'a>, Vec<Error<'a>>> {
+        match self.binops.get(symbol) {
+            Some(Info::Specific(_, binop)) => Ok(*binop),
+            Some(Info::Ambiguous(first, others)) => Err(vec![Error::AmbiguousBinop {
+                region,
+                name: symbol,
+                first_module: *first,
+                other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
+            }]),
+            None => Err(vec![Error::NotFoundBinop {
+                region,
+                name: symbol,
+                available: self.available_binops(bump),
+            }]),
+        }
+    }
+
+    fn available_binops(&self, bump: &'a Bump) -> &'a [&'a str] {
+        bump.alloc_slice_fill_iter(self.binops.keys().copied())
+    }
+
+    pub fn possible_var_names(&self, bump: &'a Bump) -> crate::error::PossibleNames<'a> {
+        let locals = bump.alloc_slice_fill_iter(self.vars.keys().copied());
+        let qualified = bump.alloc_slice_fill_iter(self.q_vars.iter().map(|(prefix, inner)| {
+            let names = bump.alloc_slice_fill_iter(inner.keys().copied());
+            (*prefix, names as &[&str])
+        }));
+        crate::error::PossibleNames { locals, qualified }
+    }
+
+    pub fn possible_type_names(&self, bump: &'a Bump) -> crate::error::PossibleNames<'a> {
+        let locals = bump.alloc_slice_fill_iter(self.types.keys().copied());
+        let qualified = bump.alloc_slice_fill_iter(self.q_types.iter().map(|(prefix, inner)| {
+            let names = bump.alloc_slice_fill_iter(inner.keys().copied());
+            (*prefix, names as &[&str])
+        }));
+        crate::error::PossibleNames { locals, qualified }
+    }
+
+    pub fn possible_ctor_names(&self, bump: &'a Bump) -> crate::error::PossibleNames<'a> {
+        let locals = bump.alloc_slice_fill_iter(self.ctors.keys().copied());
+        let qualified = bump.alloc_slice_fill_iter(self.q_ctors.iter().map(|(prefix, inner)| {
+            let names = bump.alloc_slice_fill_iter(inner.keys().copied());
+            (*prefix, names as &[&str])
+        }));
+        crate::error::PossibleNames { locals, qualified }
     }
 }
 

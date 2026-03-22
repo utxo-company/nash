@@ -1,5 +1,5 @@
 use nash_ast::ModuleName;
-use nash_region::Region;
+use nash_region::{Located, Region};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BadArityContext {
@@ -8,9 +8,9 @@ pub enum BadArityContext {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DuplicatePatternContext {
+pub enum DuplicatePatternContext<'a> {
     LambdaArgs,
-    FuncArgs,
+    FuncArgs(&'a str),
     CaseBranch,
     LetBinding,
     Destruct,
@@ -24,13 +24,21 @@ pub enum VarKind {
     BadType,
 }
 
+/// Mirrors Elm's `Error.PossibleNames`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PossibleNames<'a> {
+    pub locals: &'a [&'a str],
+    pub qualified: &'a [(&'a str, &'a [&'a str])],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error<'a> {
     MissingModuleHeader,
     NotFoundType {
         region: Region,
         prefix: Option<&'a str>,
         name: &'a str,
+        suggestions: PossibleNames<'a>,
     },
     ImportNotFound {
         region: Region,
@@ -125,6 +133,7 @@ pub enum Error<'a> {
         region: Region,
         prefix: Option<&'a str>,
         name: &'a str,
+        suggestions: PossibleNames<'a>,
     },
     AmbiguousCtor {
         region: Region,
@@ -138,12 +147,73 @@ pub enum Error<'a> {
         name: &'a str,
     },
     DuplicatePattern {
-        context: DuplicatePatternContext,
+        context: DuplicatePatternContext<'a>,
         name: &'a str,
         first: Region,
         second: Region,
     },
     TupleLargerThanThree {
         region: Region,
+    },
+
+    // --- Expression canonicalization errors ---
+    NotFoundVar {
+        region: Region,
+        prefix: Option<&'a str>,
+        name: &'a str,
+        suggestions: PossibleNames<'a>,
+    },
+    AmbiguousVar {
+        region: Region,
+        prefix: Option<&'a str>,
+        name: &'a str,
+        first_module: ModuleName<'a>,
+        other_modules: &'a [ModuleName<'a>],
+    },
+    NotFoundBinop {
+        region: Region,
+        name: &'a str,
+        available: &'a [&'a str],
+    },
+    AmbiguousBinop {
+        region: Region,
+        name: &'a str,
+        first_module: ModuleName<'a>,
+        other_modules: &'a [ModuleName<'a>],
+    },
+    BinopConflict {
+        region: Region,
+        op1: &'a str,
+        op2: &'a str,
+    },
+    Shadowing {
+        name: &'a str,
+        original: Region,
+        new: Region,
+    },
+    RecursiveLet {
+        name: &'a Located<&'a str>,
+        others: &'a [&'a str],
+    },
+    AnnotationTooShort {
+        region: Region,
+        name: &'a str,
+    },
+
+    // --- Import validation errors ---
+    ImportExposingNotFound {
+        region: Region,
+        module: ModuleName<'a>,
+        name: &'a str,
+        available: &'a [&'a str],
+    },
+    ImportCtorByName {
+        region: Region,
+        name: &'a str,
+        type_name: &'a str,
+    },
+    ImportOpenAlias {
+        region: Region,
+        name: &'a str,
     },
 }

@@ -16,7 +16,7 @@ pub type Bindings<'a> = BTreeMap<&'a str, Region>;
 pub fn verify<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
-    context: DuplicatePatternContext,
+    context: DuplicatePatternContext<'a>,
     pattern: &'a Located<SourcePattern<'a>>,
 ) -> Result<(&'a Located<CanPattern<'a>>, Bindings<'a>), Vec<Error<'a>>> {
     let mut bound: Vec<(&'a str, Region)> = Vec::new();
@@ -131,6 +131,7 @@ fn canonicalize_ctor_pattern<'a>(
         environment::Ctor::Union {
             home,
             type_name,
+            type_vars: _,
             index,
             arity,
             arguments: expected_types,
@@ -244,6 +245,7 @@ mod tests {
         let nothing = Ctor::Union {
             home,
             type_name: "Maybe",
+            type_vars: &["a"],
             index: 1,
             arity: 0,
             arguments: &[],
@@ -257,6 +259,7 @@ mod tests {
         let just = Ctor::Union {
             home,
             type_name: "Maybe",
+            type_vars: &["a"],
             index: 0,
             arity: 1,
             arguments: bump.alloc_slice_fill_iter([&*just_arg_typ]),

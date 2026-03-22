@@ -16,5 +16,9 @@ description: "Code:\n\nmodule Main exposing (Foo, Foo)\n\ntype alias Foo = Int\n
         },
         prefix: None,
         name: "Int",
+        suggestions: PossibleNames {
+            locals: [],
+            qualified: [],
+        },
     },
 ]

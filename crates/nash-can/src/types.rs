@@ -156,6 +156,7 @@ fn canonicalize_named_type<'a>(
         region,
         prefix: None,
         name,
+        suggestions: env.possible_type_names(bump),
     }])
 }
 
@@ -176,6 +177,7 @@ fn canonicalize_qualified_named_type<'a>(
                 region,
                 prefix: Some(prefix),
                 name,
+                suggestions: env.possible_type_names(bump),
             }]
         })?;
 
@@ -278,7 +280,7 @@ fn canonicalize_field_type<'a>(
     })
 }
 
-fn collect_free_vars<'a>(typ: &CanType<'a>, vars: &mut BTreeSet<&'a str>) {
+pub fn collect_free_vars<'a>(typ: &CanType<'a>, vars: &mut BTreeSet<&'a str>) {
     match typ {
         CanType::Var(name) => {
             vars.insert(name);
@@ -317,6 +319,21 @@ fn collect_free_vars<'a>(typ: &CanType<'a>, vars: &mut BTreeSet<&'a str>) {
                 collect_free_vars(&r.value, vars);
             }
         }
+    }
+}
+
+/// Mirrors Elm's `Type.iteratedDealias`.
+pub fn iterated_dealias<'a>(typ: &'a Located<CanType<'a>>) -> &'a Located<CanType<'a>> {
+    match &typ.value {
+        CanType::Alias {
+            target: CanAliasType::Open(inner),
+            ..
+        }
+        | CanType::Alias {
+            target: CanAliasType::Filled(inner),
+            ..
+        } => iterated_dealias(inner),
+        _ => typ,
     }
 }
 

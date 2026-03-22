@@ -16,5 +16,9 @@ description: Foo
         },
         prefix: None,
         name: "Foo",
+        suggestions: PossibleNames {
+            locals: [],
+            qualified: [],
+        },
     },
 ]

@@ -86,6 +86,7 @@ fn add_import_ctors<'a>(
             let info = Ctor::Union {
                 home: interface.home,
                 type_name: union.name,
+                type_vars: union.parameters,
                 index: ctor.index,
                 arity: ctor.arity,
                 arguments: ctor.arguments,
@@ -128,9 +129,26 @@ fn add_import_values<'a>(
         let inner = env.q_vars.entry(prefix).or_default();
         merge_exposed(inner, iv.name, interface.home, ());
         if is_open || import_exposes_value(import, iv.name) {
-            env.vars
-                .entry(iv.name)
-                .or_insert(Var::Foreign(interface.home));
+            use std::collections::btree_map::Entry;
+            match env.vars.entry(iv.name) {
+                Entry::Vacant(e) => {
+                    e.insert(Var::Foreign(interface.home));
+                }
+                Entry::Occupied(mut e) => match e.get() {
+                    Var::Foreign(existing) if existing.name != interface.home.name => {
+                        let first = *existing;
+                        e.insert(Var::Foreigns(first, vec![interface.home]));
+                    }
+                    Var::Foreigns(_, others) => {
+                        if !others.iter().any(|h| h.name == interface.home.name)
+                            && let Var::Foreigns(_, others) = e.get_mut()
+                        {
+                            others.push(interface.home);
+                        }
+                    }
+                    _ => {}
+                },
+            }
         }
     }
 }
@@ -143,6 +161,7 @@ fn add_import_binops<'a>(
 ) {
     for binop in interface.binops {
         let info = Binop {
+            symbol: binop.symbol,
             home: interface.home,
             function: binop.function,
             associativity: binop.associativity,

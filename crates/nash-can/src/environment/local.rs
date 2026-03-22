@@ -84,6 +84,7 @@ pub fn add_ctors<'a>(
             let info = Ctor::Union {
                 home: env.home,
                 type_name: union.value.name.value,
+                type_vars: union.value.parameters,
                 index: ctor.index,
                 arity: ctor.arity,
                 arguments: ctor.arguments,
@@ -135,6 +136,7 @@ pub fn add_binops<'a>(
 
     for binop in binops {
         let info = Binop {
+            symbol: binop.value.op,
             home: env.home,
             function: binop.value.name,
             associativity: binop.value.associativity,
