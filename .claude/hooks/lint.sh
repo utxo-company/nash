@@ -275,36 +275,16 @@ fi
 
 case "$ext" in
   rs)
-    prompt="You are a Rust code quality fixer for the nash-script compiler project.
-Fix ALL violations in ${file_path}.
+    prompt="You are a code quality fixer. Fix ALL violations listed below in ${file_path}.
 
 VIOLATIONS:
 ${collected_violations}
 
-RUST FIX STRATEGIES:
-- clippy::needless_return: Remove explicit return, use expression position
-- clippy::redundant_closure: Replace |x| foo(x) with foo
-- clippy::unused_imports: Remove the unused import line
-- clippy::let_and_return: Combine let binding with the return expression
-- clippy::cognitive_complexity: Extract helper functions to reduce nesting
-- clippy::type_complexity: Introduce a type alias
-- E0277 (trait bound): Add missing trait impl or adjust generic bounds
-- E0308 (type mismatch): Fix the type or add conversion
-- E0597/E0515 (lifetime): Restructure to avoid dangling references
-- E0382 (use after move): Clone or restructure ownership
-
-PROJECT CONTEXT:
-- Uses bumpalo arena allocation with unified 'a lifetime
-- AST nodes allocated in arena — &'a T for large/recursive types, inline for small Copy types
-- Option<&'a T> not &'a Option<T> for null pointer optimization
-
 RULES:
-1. Use targeted Edit operations — fix specific lines, never rewrite entire files
-2. Fix each violation at its reported file:line:column
-3. Do NOT add #[allow(...)] attributes — fix the underlying issue
-4. Preserve existing bumpalo/arena allocation patterns
-5. If a violation cannot be fixed locally, explain why
-6. The hook pipeline will auto-format and re-run validation after your edits
+1. Use targeted Edit operations only - never rewrite the entire file
+2. Fix each violation at its reported line/column
+3. The hook pipeline will auto-format and re-run validation after your edits
+4. If a violation cannot be fixed, explain why
 
 Do not add comments explaining fixes. Do not refactor beyond what's needed."
     ;;
