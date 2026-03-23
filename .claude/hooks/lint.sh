@@ -286,6 +286,7 @@ RULES:
 2. Fix each violation at its reported line/column
 3. The hook pipeline will auto-format and re-run validation after your edits
 4. If a violation cannot be fixed, explain why
+5. Do not use allow macro to bypass the problem. Fix it
 
 Do not add comments explaining fixes. Do not refactor beyond what's needed."
     ;;
@@ -370,6 +371,8 @@ fi
 
 # CLAUDE_CONFIG_DIR inherited from parent process (user's claudio fish function)
 
+phase3_rc=0
+
 if [[ -n "$claude_cmd" ]]; then
   settings_file=".claude/subprocess-settings.json"
   if [[ ! -f "$settings_file" ]]; then
@@ -394,17 +397,18 @@ if [[ -n "$claude_cmd" ]]; then
     --disallowedTools "$disallowed_tools"
     --max-turns "$max_turns"
     --model "$model"
+    --effort medium
     "$file_path")
 
   # Recursion prevention:
-  # 1. env -u CLAUDECODE — strip env var identifying parent Claude Code process
+  # 1. env -u CLAUDECODE — no-op in hooks (not set), kept for non-hook invocations
   # 2. --setting-sources "" — don't load project settings.local.json (has hooks config)
   # 3. --settings with disableAllHooks: true — explicitly disable hooks in subprocess
   # stdout discarded; stderr flows through for observability
   if [[ -n "$timeout_cmd" ]]; then
-    "$timeout_cmd" "$tier_timeout" "${subprocess_cmd[@]}" >/dev/null || true
+    "$timeout_cmd" "$tier_timeout" "${subprocess_cmd[@]}" >/dev/null || phase3_rc=$?
   else
-    "${subprocess_cmd[@]}" >/dev/null || true
+    "${subprocess_cmd[@]}" >/dev/null || phase3_rc=$?
   fi
 fi
 
@@ -416,7 +420,9 @@ run_phase1
 run_phase2
 
 if [[ "$violation_count" -gt 0 ]]; then
-  exit_block "$violation_count violation(s): $all_codes. Fix them." "$all_codes"
+  reason="$violation_count violation(s): $all_codes. Fix them."
+  [[ "$phase3_rc" -ne 0 ]] && reason="(autofix errored) $reason"
+  exit_block "$reason" "$all_codes"
 fi
 
 exit_ok
