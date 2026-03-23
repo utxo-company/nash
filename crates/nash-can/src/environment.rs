@@ -57,6 +57,7 @@ pub enum Ctor<'a> {
         home: ModuleName<'a>,
         type_name: &'a str,
         type_vars: &'a [&'a str],
+        union: &'a nash_ast::Union<'a>,
         index: u16,
         arity: u16,
         arguments: &'a [&'a Located<CanType<'a>>],
@@ -67,6 +68,8 @@ pub enum Ctor<'a> {
     /// Elm creates these automatically for non-extensible record aliases.
     RecordCtor {
         home: ModuleName<'a>,
+        alias_name: &'a str,
+        type_vars: &'a [&'a str],
         field_names: &'a [&'a str],
         field_types: &'a [&'a Located<CanType<'a>>],
     },

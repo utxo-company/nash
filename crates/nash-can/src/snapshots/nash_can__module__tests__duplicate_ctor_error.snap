@@ -1,0 +1,29 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (..)\n\ntype alias Point a = { x : a, y : a }\n\ntype Shape a\n    = Point a a\n    | Circle a\n"
+---
+[
+    DuplicateCtor {
+        name: "Point",
+        first: Region {
+            start: Position {
+                line: 5,
+                column: 6,
+            },
+            end: Position {
+                line: 5,
+                column: 11,
+            },
+        },
+        second: Region {
+            start: Position {
+                line: 3,
+                column: 12,
+            },
+            end: Position {
+                line: 3,
+                column: 17,
+            },
+        },
+    },
+]

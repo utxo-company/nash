@@ -1,0 +1,28 @@
+module Main exposing (..)
+
+import Utils exposing (double, (|>))
+
+type alias Pair a b = { first : a, second : b }
+
+identity : a -> a
+identity x = x
+
+const : a -> b -> a
+const a b = a
+
+makePair = Pair
+
+pipeline = 42 |> double |> double
+
+nested =
+    let
+        a = 1
+        b = 2
+    in
+    a
+
+choosing x =
+    if x then
+        1
+    else
+        0

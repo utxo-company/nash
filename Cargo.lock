@@ -1908,6 +1908,8 @@ dependencies = [
  "indoc",
  "insta",
  "miette",
+ "nash-ast",
+ "nash-can",
  "nash-config",
  "nash-parse",
  "nash-region",

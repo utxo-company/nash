@@ -55,8 +55,7 @@ pub fn canonicalize<'a>(
     let home = canonicalize_header(context, module).map_err(|e| vec![e])?;
 
     let mut env =
-        environment::foreign::create_initial_env(bump, home, context.interfaces, module.imports)
-            .map_err(|e| vec![e])?;
+        environment::foreign::create_initial_env(bump, home, context.interfaces, module.imports)?;
 
     environment::local::add_union_types(&mut env, module.unions, module.aliases)?;
     let aliases = canonicalize_aliases(bump, &mut env, module.aliases)?;
@@ -823,7 +822,7 @@ fn collect_from_expr<'a>(
     use nash_ast::Expr::*;
     match expr {
         VarLocal(_) | Str(_) | Int(_) | Accessor(_) | Unit => {}
-        VarTopLevel(q) => add_if_foreign(home, q.home, used),
+        VarTopLevel(q) | VarForeign(q) => add_if_foreign(home, q.home, used),
         VarConstructor {
             reference,
             annotation,
@@ -949,7 +948,7 @@ fn collect_from_pattern<'a>(
 ) {
     use nash_ast::Pattern::*;
     match pat {
-        Anything | Var(_) | Str(_) | Int(_) | Unit | Record(_) => {}
+        Anything | Var(_) | Str(_) | Int(_) | Unit | Record(_) | Bool { .. } => {}
         Constructor(ctor) => {
             add_if_foreign(home, ctor.reference.home, used);
             for arg in ctor.arguments {
@@ -1048,13 +1047,15 @@ mod tests {
     use bumpalo::Bump;
     use indoc::indoc;
     use nash_ast::{
-        Ctor as CanCtor, CtorOpts, Module as CanModule, ModuleName, PackageName, Type as CanType,
+        Associativity, Ctor as CanCtor, CtorOpts, Module as CanModule, ModuleName, PackageName,
+        Precedence, Type as CanType,
     };
     use nash_region::{Located, Region};
 
     use super::{Context, canonicalize};
     use crate::interface::{
-        self, AliasVisibility, InterfaceAlias, InterfaceUnion, UnionVisibility,
+        self, AliasVisibility, InterfaceAlias, InterfaceBinop, InterfaceUnion, InterfaceValue,
+        UnionVisibility,
     };
     use crate::{Error, Interface};
 
@@ -2512,6 +2513,1116 @@ mod tests {
         };
         let (_, warnings) = parse_and_canonicalize_with_warnings(&bump, input, context)
             .expect("expected successful canonicalization");
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings but got: {warnings:?}"
+        );
+    }
+
+    // === Helpers for interface-dependent tests ===
+
+    fn maybe_with_ctors_interface<'a>(bump: &'a Bump) -> Interface<'a> {
+        let just_arg = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
+        let just_ctor: &CanCtor = bump.alloc(CanCtor {
+            name: "Just",
+            index: 0,
+            arity: 1,
+            arguments: bump.alloc_slice_fill_iter([&*just_arg]),
+        });
+        let nothing_ctor: &CanCtor = bump.alloc(CanCtor {
+            name: "Nothing",
+            index: 1,
+            arity: 0,
+            arguments: &[],
+        });
+        Interface {
+            home: ModuleName {
+                package: None,
+                name: "Maybe",
+            },
+            values: &[],
+            aliases: &[],
+            unions: bump.alloc_slice_fill_iter([InterfaceUnion {
+                name: "Maybe",
+                parameters: bump.alloc_slice_fill_iter(["a"]),
+                ctors: bump.alloc_slice_fill_iter([just_ctor, nothing_ctor]),
+                alternatives: 2,
+                options: CtorOpts::Normal,
+                visibility: UnionVisibility::Open,
+            }]),
+            binops: &[],
+        }
+    }
+
+    fn basics_with_binops_interface<'a>(bump: &'a Bump) -> Interface<'a> {
+        Interface {
+            home: ModuleName {
+                package: None,
+                name: "Basics",
+            },
+            values: bump.alloc_slice_fill_iter([
+                InterfaceValue {
+                    name: "add",
+                    annotation: None,
+                },
+                InterfaceValue {
+                    name: "sub",
+                    annotation: None,
+                },
+                InterfaceValue {
+                    name: "mul",
+                    annotation: None,
+                },
+                InterfaceValue {
+                    name: "apR",
+                    annotation: None,
+                },
+                InterfaceValue {
+                    name: "apL",
+                    annotation: None,
+                },
+            ]),
+            aliases: &[],
+            unions: &[],
+            binops: bump.alloc_slice_fill_iter([
+                InterfaceBinop {
+                    symbol: "+",
+                    associativity: Associativity::Left,
+                    precedence: Precedence(6),
+                    function: "add",
+                },
+                InterfaceBinop {
+                    symbol: "-",
+                    associativity: Associativity::Left,
+                    precedence: Precedence(6),
+                    function: "sub",
+                },
+                InterfaceBinop {
+                    symbol: "*",
+                    associativity: Associativity::Left,
+                    precedence: Precedence(7),
+                    function: "mul",
+                },
+                InterfaceBinop {
+                    symbol: "|>",
+                    associativity: Associativity::Left,
+                    precedence: Precedence(0),
+                    function: "apR",
+                },
+                InterfaceBinop {
+                    symbol: "<|",
+                    associativity: Associativity::Right,
+                    precedence: Precedence(0),
+                    function: "apL",
+                },
+            ]),
+        }
+    }
+
+    // === Constructor / operator expression tests ===
+
+    #[test]
+    fn constructor_in_expression() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe(..))
+
+            x = Just
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Maybe", maybe_with_ctors_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn record_ctor_in_expression() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Pair a b = { first : a, second : b }
+
+            p = Pair
+        "#
+        );
+    }
+
+    // qualified_ctor_in_expression skipped: parser doesn't yet produce
+    // VarQual { kind: CapVar } for `Module.Ctor` syntax.
+
+    #[test]
+    fn op_as_value() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Basics exposing (..)
+
+            x = (+)
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Basics", basics_with_binops_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn binop_expression() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Basics exposing (..)
+
+            x a b = a + b
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Basics", basics_with_binops_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn binop_multi_precedence() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Basics exposing (..)
+
+            x a b c = a + b * c
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Basics", basics_with_binops_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn binop_right_assoc() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Basics exposing (..)
+
+            x a b c = a <| b <| c
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Basics", basics_with_binops_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    // === Typed def tests ===
+
+    #[test]
+    fn typed_def_top_level() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f : a -> a
+            f x = x
+        "#
+        );
+    }
+
+    #[test]
+    fn typed_def_in_let() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            g =
+                let
+                    f : a -> a
+                    f x = x
+                in
+                f 1
+        "#
+        );
+    }
+
+    // === Let destruct ===
+
+    #[test]
+    fn let_destruct() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    (a, b) = (1, 2)
+                in
+                a
+        "#
+        );
+    }
+
+    #[test]
+    fn let_mutual_recursion() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    go x = stop x
+                    stop x = go x
+                in
+                go 1
+        "#
+        );
+    }
+
+    // === find_var gaps ===
+
+    #[test]
+    fn foreign_var_unqualified() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo exposing (bar)
+
+            x = bar
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Foo", value_interface(&bump, "Foo", "bar"))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn not_found_var_qualified() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo
+
+            x = Foo.nonexistent
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Foo", value_interface(&bump, "Foo", "bar"))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    // === verify_bindings ===
+
+    #[test]
+    fn underscore_prefix_no_warning() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = \_ -> 1
+        "#
+        );
+    }
+
+    // === canonicalize_if ===
+
+    #[test]
+    fn chained_if_else_if() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x =
+                if x then
+                    1
+                else if x then
+                    2
+                else
+                    3
+        "#
+        );
+    }
+
+    // === canonicalize_update ===
+
+    #[test]
+    fn update_missing_record_var() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = { nonexistent | x = 1 }
+        "#
+        );
+    }
+
+    // === case branches ===
+
+    #[test]
+    fn case_with_ctor_patterns() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe(..))
+
+            f x =
+                case x of
+                    Just y -> y
+                    Nothing -> 0
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Maybe", maybe_with_ctors_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    // === Expression error tests ===
+
+    #[test]
+    fn not_found_binop() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            x = (+)
+        "#
+        );
+    }
+
+    #[test]
+    fn ambiguous_var() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo exposing (..)
+
+            import Bar exposing (..)
+
+            x = baz
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([
+            ("Foo", value_interface(&bump, "Foo", "baz")),
+            ("Bar", value_interface(&bump, "Bar", "baz")),
+        ]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn ambiguous_ctor_in_expr() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe(..))
+
+            import Option exposing (Option(..))
+
+            x = Just
+        "#
+        );
+        let bump = Bump::new();
+        // Build two interfaces that both expose "Just"
+        let just_arg = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
+        let just_ctor: &CanCtor = bump.alloc(CanCtor {
+            name: "Just",
+            index: 0,
+            arity: 1,
+            arguments: bump.alloc_slice_fill_iter([&*just_arg]),
+        });
+        let nothing_ctor: &CanCtor = bump.alloc(CanCtor {
+            name: "Nothing",
+            index: 1,
+            arity: 0,
+            arguments: &[],
+        });
+        let maybe_interface = Interface {
+            home: ModuleName {
+                package: None,
+                name: "Maybe",
+            },
+            values: &[],
+            aliases: &[],
+            unions: bump.alloc_slice_fill_iter([InterfaceUnion {
+                name: "Maybe",
+                parameters: bump.alloc_slice_fill_iter(["a"]),
+                ctors: bump.alloc_slice_fill_iter([just_ctor, nothing_ctor]),
+                alternatives: 2,
+                options: CtorOpts::Normal,
+                visibility: UnionVisibility::Open,
+            }]),
+            binops: &[],
+        };
+
+        let just_arg2 = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
+        let just_ctor2: &CanCtor = bump.alloc(CanCtor {
+            name: "Just",
+            index: 0,
+            arity: 1,
+            arguments: bump.alloc_slice_fill_iter([&*just_arg2]),
+        });
+        let none_ctor: &CanCtor = bump.alloc(CanCtor {
+            name: "None",
+            index: 1,
+            arity: 0,
+            arguments: &[],
+        });
+        let option_interface = Interface {
+            home: ModuleName {
+                package: None,
+                name: "Option",
+            },
+            values: &[],
+            aliases: &[],
+            unions: bump.alloc_slice_fill_iter([InterfaceUnion {
+                name: "Option",
+                parameters: bump.alloc_slice_fill_iter(["a"]),
+                ctors: bump.alloc_slice_fill_iter([just_ctor2, none_ctor]),
+                alternatives: 2,
+                options: CtorOpts::Normal,
+                visibility: UnionVisibility::Open,
+            }]),
+            binops: &[],
+        };
+
+        let interfaces = BTreeMap::from([("Maybe", maybe_interface), ("Option", option_interface)]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn ambiguous_binop() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Basics exposing (..)
+
+            import MyMath exposing (..)
+
+            x a b = a + b
+        "#
+        );
+        let bump = Bump::new();
+        let basics = basics_with_binops_interface(&bump);
+        let mymath = Interface {
+            home: ModuleName {
+                package: None,
+                name: "MyMath",
+            },
+            values: &[],
+            aliases: &[],
+            unions: &[],
+            binops: bump.alloc_slice_fill_iter([InterfaceBinop {
+                symbol: "+",
+                associativity: Associativity::Left,
+                precedence: Precedence(6),
+                function: "myAdd",
+            }]),
+        };
+        let interfaces = BTreeMap::from([("Basics", basics), ("MyMath", mymath)]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn binop_non_assoc_conflict() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Basics exposing (..)
+
+            x a b c = a == b == c
+        "#
+        );
+        let bump = Bump::new();
+        let basics = Interface {
+            home: ModuleName {
+                package: None,
+                name: "Basics",
+            },
+            values: bump.alloc_slice_fill_iter([InterfaceValue {
+                name: "eq",
+                annotation: None,
+            }]),
+            aliases: &[],
+            unions: &[],
+            binops: bump.alloc_slice_fill_iter([InterfaceBinop {
+                symbol: "==",
+                associativity: Associativity::None,
+                precedence: Precedence(4),
+                function: "eq",
+            }]),
+        };
+        let interfaces = BTreeMap::from([("Basics", basics)]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn annotation_too_short() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f : a
+            f x = x
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_field_in_update() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f r = { r | x = 1, x = 2 }
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_pattern_lambda_args() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f = \x x -> x
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_pattern_func_args() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x x = x
+        "#
+        );
+    }
+
+    #[test]
+    fn duplicate_pattern_destruct() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    (x, x) = (1, 2)
+                in
+                x
+        "#
+        );
+    }
+
+    #[test]
+    fn let_mutual_recursion_values_error() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f =
+                let
+                    a = b
+                    b = a
+                in
+                a
+        "#
+        );
+    }
+
+    #[test]
+    fn shadowing_toplevel() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            x = 1
+
+            f =
+                let
+                    x = 2
+                in
+                x
+        "#
+        );
+    }
+
+    // === Expression warning tests ===
+
+    #[test]
+    fn unused_func_arg_warning() {
+        assert_module_warning_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f x = 42
+        "#
+        );
+    }
+
+    #[test]
+    fn unused_case_branch_var() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe(..))
+
+            f x =
+                case x of
+                    Just y -> 1
+                    Nothing -> 0
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Maybe", maybe_with_ctors_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let (_, warnings) = parse_and_canonicalize_with_warnings(&bump, input, context)
+            .expect("expected successful canonicalization");
+        assert!(!warnings.is_empty(), "expected warnings but got none");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(warnings);
+        });
+    }
+
+    // === Module-level tests ===
+
+    #[test]
+    fn duplicate_ctor_error() {
+        // A record alias and union both produce a ctor named "Point"
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Point a = { x : a, y : a }
+
+            type Shape a
+                = Point a a
+                | Circle a
+        "#
+        );
+    }
+
+    #[test]
+    fn ctor_opts_unbox() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type Wrap a
+                = Wrap a
+        "#
+        );
+    }
+
+    #[test]
+    fn multiple_unbound_union_vars() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type Foo
+                = Bar a b
+        "#
+        );
+    }
+
+    #[test]
+    fn alias_both_unused_and_unbound() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Bad a = b
+        "#
+        );
+    }
+
+    #[test]
+    fn export_explicit_value() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (foo)
+
+            foo = 42
+        "#
+        );
+    }
+
+    #[test]
+    fn infix_right_associativity() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing ((<|))
+
+            infix right 0 (<|) = apL
+        "#
+        );
+    }
+
+    #[test]
+    fn infix_non_associativity() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing ((==))
+
+            infix non 4 (==) = eq
+        "#
+        );
+    }
+
+    #[test]
+    fn local_record_alias_ctor() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Point a = { x : a, y : a }
+
+            p = Point
+        "#
+        );
+    }
+
+    // === Interface tests: non-exported binop ===
+
+    #[test]
+    fn interface_non_exported_binop() {
+        assert_interface_snapshot!(
+            r#"
+            module Main exposing (foo)
+
+            infix left 6 (|>) = apR
+
+            foo = 42
+        "#
+        );
+    }
+
+    // === Import validation tests ===
+
+    #[test]
+    fn import_exposing_not_found_value() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo exposing (nonexistent)
+
+            x = 1
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Foo", value_interface(&bump, "Foo", "bar"))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn import_exposing_not_found_type() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo exposing (Nonexistent)
+
+            x = 1
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Foo", value_interface(&bump, "Foo", "bar"))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn import_exposing_not_found_op() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo exposing ((+))
+
+            x = 1
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Foo", value_interface(&bump, "Foo", "bar"))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn import_ctor_by_name() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Just)
+
+            x = 1
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Maybe", maybe_with_ctors_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn import_open_alias() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Foo exposing (MyAlias(..))
+
+            x = 1
+        "#
+        );
+        let bump = Bump::new();
+        let alias_type = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
+        let foo = Interface {
+            home: ModuleName {
+                package: None,
+                name: "Foo",
+            },
+            values: &[],
+            aliases: bump.alloc_slice_fill_iter([InterfaceAlias {
+                name: "MyAlias",
+                parameters: bump.alloc_slice_fill_iter(["a"]),
+                typ: alias_type,
+                visibility: AliasVisibility::Public,
+            }]),
+            unions: &[],
+            binops: &[],
+        };
+        let interfaces = BTreeMap::from([("Foo", foo)]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    // === collect_used_modules coverage ===
+
+    #[test]
+    fn collect_from_def_typed() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe)
+
+            f : Maybe a -> Maybe a
+            f x = x
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Maybe", maybe_with_ctors_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let (_, warnings) = parse_and_canonicalize_with_warnings(&bump, input, context)
+            .expect("expected successful canonicalization");
+        // Should not have an "unused import" warning for Maybe because
+        // it is used in the type annotation.
         assert!(
             warnings.is_empty(),
             "expected no warnings but got: {warnings:?}"

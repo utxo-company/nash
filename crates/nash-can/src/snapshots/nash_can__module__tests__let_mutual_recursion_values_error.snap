@@ -1,0 +1,24 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (..)\n\nf =\n    let\n        a = b\n        b = a\n    in\n    a\n"
+---
+[
+    RecursiveLet {
+        name: Located {
+            region: Region {
+                start: Position {
+                    line: 6,
+                    column: 9,
+                },
+                end: Position {
+                    line: 6,
+                    column: 10,
+                },
+            },
+            value: "b",
+        },
+        others: [
+            "a",
+        ],
+    },
+]

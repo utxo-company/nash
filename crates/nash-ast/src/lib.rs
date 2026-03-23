@@ -119,6 +119,7 @@ pub enum CtorOpts {
 pub enum Expr<'a> {
     VarLocal(&'a str),
     VarTopLevel(QualifiedName<'a>),
+    VarForeign(QualifiedName<'a>),
     VarConstructor {
         options: CtorOpts,
         reference: ConstructorName<'a>,
@@ -235,6 +236,10 @@ pub enum Pattern<'a> {
         tail: &'a Located<Pattern<'a>>,
     },
     Constructor(PatternCtor<'a>),
+    Bool {
+        union: &'a Union<'a>,
+        value: bool,
+    },
     Str(&'a str),
     Int(i128),
 }
@@ -242,6 +247,7 @@ pub enum Pattern<'a> {
 #[derive(Debug)]
 pub struct PatternCtor<'a> {
     pub reference: ConstructorName<'a>,
+    pub union: &'a Union<'a>,
     pub index: u16,
     pub arguments: &'a [PatternCtorArg<'a>],
     pub options: CtorOpts,

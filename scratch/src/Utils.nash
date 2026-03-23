@@ -1,0 +1,9 @@
+module Utils exposing (double, triple, (|>))
+
+infix left 0 (|>) = apR
+
+double x = x
+
+triple x = x
+
+apR x f = f x

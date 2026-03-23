@@ -2,7 +2,7 @@
 //!
 //! Coordinates parallel compilation of modules respecting dependency order.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use bumpalo::Bump;
@@ -43,6 +43,9 @@ pub struct BuildResult {
 
     /// Number of failed compilations.
     pub failed: usize,
+
+    /// Warnings collected during canonicalization.
+    pub warnings: Vec<String>,
 }
 
 impl BuildResult {
@@ -54,17 +57,35 @@ impl BuildResult {
 
 /// Compile all modules in the dependency graph.
 ///
-/// Modules are compiled in parallel within each dependency level.
-/// A level N can be compiled once all levels < N have completed.
+/// Modules are compiled level-by-level. Sources for each level are fetched
+/// in parallel, then compiled. Interfaces from earlier levels are passed to
+/// later levels for import resolution.
+///
+/// Within-level compilation is currently sequential because `Bump` is `!Sync`
+/// and `Context<'a>` ties the arena lifetime to the interface lifetime.
+/// Real parallelism would require either splitting those lifetimes or using
+/// per-module arenas with a post-level interface extraction step.
 pub async fn build(db: Arc<Mutex<Database>>, graph: &DepGraph) -> BuildResult {
+    // Shared arena for interfaces that must outlive individual module compilations.
+    let shared_bump = Bump::new();
     let mut results: HashMap<Url, ModuleResult> = HashMap::new();
+    let mut interfaces: BTreeMap<&str, nash_can::Interface<'_>> = BTreeMap::new();
+    let mut all_warnings: Vec<String> = Vec::new();
     let levels = graph.levels();
 
     for level in levels {
-        // Compile all modules at this level in parallel
-        let level_results = compile_level(db.clone(), level).await;
+        // Pre-fetch all sources for this level in parallel
+        let sources = fetch_sources(&db, &level).await;
 
-        for (uri, result) in level_results {
+        // Compile each module (sequential — see doc comment above)
+        for (uri, source) in sources {
+            let result = compile_module(
+                &uri,
+                &source,
+                &shared_bump,
+                &mut interfaces,
+                &mut all_warnings,
+            );
             results.insert(uri, result);
         }
     }
@@ -81,67 +102,103 @@ pub async fn build(db: Arc<Mutex<Database>>, graph: &DepGraph) -> BuildResult {
         total,
         success,
         failed,
+        warnings: all_warnings,
     }
 }
 
-/// Compile all modules at a single dependency level in parallel.
-async fn compile_level(db: Arc<Mutex<Database>>, modules: Vec<&Url>) -> Vec<(Url, ModuleResult)> {
+/// Fetch source content for all modules in a level, in parallel.
+async fn fetch_sources(
+    db: &Arc<Mutex<Database>>,
+    uris: &[&Url],
+) -> Vec<(Url, Result<String, String>)> {
     let mut set = JoinSet::new();
 
-    for uri in modules {
+    for &uri in uris {
         let uri = uri.clone();
         let db = db.clone();
-
         set.spawn(async move {
-            let result = compile_module(&db, &uri).await;
-            (uri, result)
+            let source = {
+                let mut db = db.lock().await;
+                db.source(&uri).await.map(|s| s.to_string())
+            };
+            (uri, source.map_err(|e| e.to_string()))
         });
     }
 
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(uris.len());
     while let Some(res) = set.join_next().await {
-        match res {
-            Ok((uri, result)) => results.push((uri, result)),
-            Err(e) => {
-                // Task panicked - should not happen in normal operation
-                eprintln!("Task panicked: {:?}", e);
-            }
+        if let Ok(r) = res {
+            results.push(r);
         }
     }
-
     results
 }
 
-/// Compile a single module.
-async fn compile_module(db: &Arc<Mutex<Database>>, uri: &Url) -> ModuleResult {
-    // Get source content
-    let source = {
-        let mut db = db.lock().await;
-        match db.source(uri).await {
-            Ok(s) => s.to_string(),
-            Err(e) => {
-                return ModuleResult::Failed {
-                    message: e.to_string(),
-                };
-            }
+/// Compile a single module: parse, canonicalize, extract interface.
+fn compile_module<'a>(
+    _uri: &Url,
+    source: &Result<String, String>,
+    shared_bump: &'a Bump,
+    interfaces: &mut BTreeMap<&'a str, nash_can::Interface<'a>>,
+    warnings: &mut Vec<String>,
+) -> ModuleResult {
+    let source = match source {
+        Ok(s) => s,
+        Err(e) => {
+            return ModuleResult::Failed { message: e.clone() };
         }
     };
 
-    // Parse the module
-    let bump = Bump::new();
-    let src = bump.alloc_str(&source);
-    let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
+    // Allocate source into shared bump so it outlives the parse
+    let src: &str = shared_bump.alloc_str(source);
+    let mut parser = nash_parse::Parser::new(shared_bump, src.as_bytes());
 
-    match parser.module() {
-        Ok(module) => {
-            // Count declarations
-            let decl_count = module.values.len() + module.unions.len() + module.aliases.len();
+    let module = match parser.module() {
+        Ok(m) => m,
+        Err(e) => {
+            return ModuleResult::Failed {
+                message: format!("{:?}", e),
+            };
+        }
+    };
 
+    // Build canonicalization context with interfaces from already-compiled modules
+    let context = nash_can::Context {
+        package: None,
+        interfaces: if interfaces.is_empty() {
+            None
+        } else {
+            Some(&*shared_bump.alloc(interfaces.clone()))
+        },
+    };
+
+    match nash_can::canonicalize(shared_bump, context, &module) {
+        Ok(can_result) => {
+            for w in &can_result.warnings {
+                warnings.push(format!("{:?}", w));
+            }
+
+            // Extract interface and store it for downstream modules
+            let interface = nash_can::from_module(shared_bump, &can_result.module);
+            let module_name: &str = shared_bump.alloc_str(can_result.module.name.name);
+            interfaces.insert(module_name, interface);
+
+            let decl_count = count_decls(can_result.module.decls);
             ModuleResult::Success { decl_count }
         }
-        Err(e) => ModuleResult::Failed {
-            message: format!("{:?}", e),
+        Err(errors) => ModuleResult::Failed {
+            message: format!("{:?}", errors),
         },
+    }
+}
+
+fn count_decls(decls: &nash_ast::Decls<'_>) -> usize {
+    match decls {
+        nash_ast::Decls::Declare { next, .. } => 1 + count_decls(next),
+        nash_ast::Decls::DeclareRec {
+            following, next, ..
+        } => 1 + following.len() + count_decls(next),
+        nash_ast::Decls::Empty => 0,
     }
 }
 
@@ -237,16 +294,13 @@ main = 42
         );
 
         let db = Arc::new(Mutex::new(Database::new(mem)));
-        let result = compile_module(&db, &uri).await;
+        let modules = vec![uri];
+        let graph = build_graph(db.clone(), &modules).await.unwrap();
+        let result = build(db, &graph).await;
 
-        match result {
-            ModuleResult::Success { decl_count } => {
-                assert_eq!(decl_count, 1); // main is one value declaration
-            }
-            ModuleResult::Failed { message } => {
-                panic!("Expected success, got failure: {}", message);
-            }
-        }
+        assert_eq!(result.total, 1);
+        assert_eq!(result.success, 1);
+        assert!(result.is_success());
     }
 
     #[tokio::test]
@@ -259,9 +313,12 @@ main = 42
         );
 
         let db = Arc::new(Mutex::new(Database::new(mem)));
-        let result = compile_module(&db, &uri).await;
+        let modules = vec![uri];
+        let graph = build_graph(db.clone(), &modules).await.unwrap();
+        let result = build(db, &graph).await;
 
-        assert!(matches!(result, ModuleResult::Failed { .. }));
+        assert_eq!(result.total, 1);
+        assert_eq!(result.failed, 1);
     }
 
     #[tokio::test]
@@ -286,7 +343,7 @@ module Main exposing (..)
 
 import Utils
 
-main = 42
+main = Utils.helper
 "#
             .to_string(),
         );

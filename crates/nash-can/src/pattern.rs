@@ -132,6 +132,7 @@ fn canonicalize_ctor_pattern<'a>(
             home,
             type_name,
             type_vars: _,
+            union: union_def,
             index,
             arity,
             arguments: expected_types,
@@ -175,6 +176,7 @@ fn canonicalize_ctor_pattern<'a>(
                     union: type_name,
                     name,
                 },
+                union: union_def,
                 index: *index,
                 arguments: bump.alloc_slice_fill_iter(ctor_args),
                 options: *options,
@@ -213,8 +215,7 @@ fn canonicalize_list<'a>(
 mod tests {
     use super::*;
     use bumpalo::Bump;
-    use nash_ast::{CtorOpts, ModuleName, Type as CanType};
-    use nash_region::{Located, Region};
+    use nash_ast::{CtorOpts, ModuleName, Type as CanType, Union};
 
     use crate::environment::{Ctor, Env, Info};
 
@@ -241,11 +242,33 @@ mod tests {
         };
         let mut env = empty_env(bump);
 
+        let nothing_ctor = bump.alloc(nash_ast::Ctor {
+            name: "Nothing",
+            index: 1,
+            arity: 0,
+            arguments: &[],
+        });
+        let just_arg_typ = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
+        let just_ctor = bump.alloc(nash_ast::Ctor {
+            name: "Just",
+            index: 0,
+            arity: 1,
+            arguments: bump.alloc_slice_fill_iter([&*just_arg_typ]),
+        });
+        let maybe_union: &Union = bump.alloc(Union {
+            name: bump.alloc(Located::at(Region::zero(), "Maybe")),
+            parameters: bump.alloc_slice_fill_iter(["a"]),
+            ctors: bump.alloc_slice_fill_iter([&*nothing_ctor, &*just_ctor]),
+            alternatives: 2,
+            options: CtorOpts::Normal,
+        });
+
         // Nothing: arity 0
         let nothing = Ctor::Union {
             home,
             type_name: "Maybe",
             type_vars: &["a"],
+            union: maybe_union,
             index: 1,
             arity: 0,
             arguments: &[],
@@ -255,11 +278,11 @@ mod tests {
         env.ctors.insert("Nothing", Info::Specific(home, nothing));
 
         // Just: arity 1
-        let just_arg_typ = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
         let just = Ctor::Union {
             home,
             type_name: "Maybe",
             type_vars: &["a"],
+            union: maybe_union,
             index: 0,
             arity: 1,
             arguments: bump.alloc_slice_fill_iter([&*just_arg_typ]),
@@ -281,6 +304,8 @@ mod tests {
         let field_typ = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
         let ctor = Ctor::RecordCtor {
             home,
+            alias_name: "Point",
+            type_vars: &[],
             field_names: bump.alloc_slice_fill_iter(["x", "y"]),
             field_types: bump.alloc_slice_fill_iter([&*field_typ, &*field_typ]),
         };

@@ -24,6 +24,56 @@ description: Just x
                     union: "Maybe",
                     name: "Just",
                 },
+                union: Union {
+                    name: Located {
+                        region: Region {
+                            start: Position {
+                                line: 0,
+                                column: 0,
+                            },
+                            end: Position {
+                                line: 0,
+                                column: 0,
+                            },
+                        },
+                        value: "Maybe",
+                    },
+                    parameters: [
+                        "a",
+                    ],
+                    ctors: [
+                        Ctor {
+                            name: "Nothing",
+                            index: 1,
+                            arity: 0,
+                            arguments: [],
+                        },
+                        Ctor {
+                            name: "Just",
+                            index: 0,
+                            arity: 1,
+                            arguments: [
+                                Located {
+                                    region: Region {
+                                        start: Position {
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                        end: Position {
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    },
+                                    value: Var(
+                                        "a",
+                                    ),
+                                },
+                            ],
+                        },
+                    ],
+                    alternatives: 2,
+                    options: Normal,
+                },
                 index: 0,
                 arguments: [
                     PatternCtorArg {

@@ -44,6 +44,13 @@ impl Args {
         let result = build(db, &graph).await;
 
         eprintln!();
+        if !result.warnings.is_empty() {
+            for warning in &result.warnings {
+                eprintln!("Warning: {}", warning);
+            }
+            eprintln!();
+        }
+
         if result.is_success() {
             eprintln!(
                 "Success! Compiled {} modules ({} declarations)",

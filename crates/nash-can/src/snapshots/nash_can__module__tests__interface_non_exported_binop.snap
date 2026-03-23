@@ -1,0 +1,19 @@
+---
+source: crates/nash-can/src/module.rs
+description: "Code:\n\nmodule Main exposing (foo)\n\ninfix left 6 (|>) = apR\n\nfoo = 42\n"
+---
+Interface {
+    home: ModuleName {
+        package: None,
+        name: "Main",
+    },
+    values: [
+        InterfaceValue {
+            name: "foo",
+            annotation: None,
+        },
+    ],
+    aliases: [],
+    unions: [],
+    binops: [],
+}

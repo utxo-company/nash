@@ -49,6 +49,8 @@ pub fn add_alias_type<'a>(bump: &'a Bump, env: &mut Env<'a>, can_alias: &CanAlia
         let field_types = bump.alloc_slice_fill_iter(fields.iter().map(|f| f.typ));
         let info = Ctor::RecordCtor {
             home: env.home,
+            alias_name: can_alias.name.value,
+            type_vars: can_alias.parameters,
             field_names,
             field_types,
         };
@@ -85,6 +87,7 @@ pub fn add_ctors<'a>(
                 home: env.home,
                 type_name: union.value.name.value,
                 type_vars: union.value.parameters,
+                union: &union.value,
                 index: ctor.index,
                 arity: ctor.arity,
                 arguments: ctor.arguments,

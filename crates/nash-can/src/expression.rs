@@ -238,7 +238,7 @@ fn find_var<'a>(
                 name,
             }))
         }
-        Some(Var::Foreign(home)) => Ok(CanExpr::VarTopLevel(QualifiedName { home: *home, name })),
+        Some(Var::Foreign(home)) => Ok(CanExpr::VarForeign(QualifiedName { home: *home, name })),
         Some(Var::Foreigns(first, others)) => Err(vec![Error::AmbiguousVar {
             region,
             prefix: None,
@@ -275,7 +275,7 @@ fn find_var_qual<'a>(
             }]
         })?;
     match info {
-        Info::Specific(home, ()) => Ok(CanExpr::VarTopLevel(QualifiedName { home: *home, name })),
+        Info::Specific(home, ()) => Ok(CanExpr::VarForeign(QualifiedName { home: *home, name })),
         Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousVar {
             region,
             prefix: Some(prefix),
@@ -336,6 +336,8 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
         }
         EnvCtor::RecordCtor {
             home,
+            alias_name,
+            type_vars,
             field_names,
             field_types,
         } => {
@@ -366,7 +368,28 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
                     ext: None,
                 },
             ));
-            let mut typ: &Located<CanType> = record_type;
+
+            // Wrap in Alias { target: Filled(record) } like Elm's toRecordCtor
+            let alias_args: Vec<nash_ast::AliasArgument<'a>> = type_vars
+                .iter()
+                .map(|v| nash_ast::AliasArgument {
+                    name: v,
+                    typ: bump.alloc(Located::at(Region::zero(), CanType::Var(v))),
+                })
+                .collect();
+            let result_type: &Located<CanType> = bump.alloc(Located::at(
+                Region::zero(),
+                CanType::Alias {
+                    reference: QualifiedName {
+                        home: *home,
+                        name: alias_name,
+                    },
+                    arguments: bump.alloc_slice_fill_iter(alias_args),
+                    target: nash_ast::AliasType::Filled(record_type),
+                },
+            ));
+
+            let mut typ: &Located<CanType> = result_type;
             for field_type in field_types.iter().rev() {
                 typ = bump.alloc(Located::at(
                     Region::zero(),
@@ -382,7 +405,7 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
                 options: CtorOpts::Normal,
                 reference: ConstructorName {
                     home: *home,
-                    union: name,
+                    union: alias_name,
                     name,
                 },
                 index: 0,

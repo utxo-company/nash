@@ -77,13 +77,7 @@ fn canonicalize_type_value<'a>(
             name,
             args,
             ..
-        } => {
-            if *type_module == env.home.name {
-                canonicalize_named_type(bump, env, region, name, args)?
-            } else {
-                canonicalize_qualified_named_type(bump, env, region, type_module, name, args)?
-            }
-        }
+        } => canonicalize_qualified_named_type(bump, env, region, type_module, name, args)?,
         SourceType::Record { fields, ext } => {
             dups::detect(
                 fields.iter().map(|f| (f.field.value, f.field.region)),
