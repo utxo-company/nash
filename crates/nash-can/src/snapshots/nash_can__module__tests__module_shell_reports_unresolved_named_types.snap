@@ -17,7 +17,9 @@ description: "Code:\n\nmodule Main exposing (Wrapped)\n\ntype alias Wrapped = Mi
         prefix: None,
         name: "Missing",
         suggestions: PossibleNames {
-            locals: [],
+            locals: [
+                "List",
+            ],
             qualified: [],
         },
     },

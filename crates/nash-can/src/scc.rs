@@ -1,37 +1,50 @@
 use std::collections::BTreeMap;
 
-pub enum Scc<'a> {
-    Acyclic(&'a str),
-    Cyclic(Vec<&'a str>),
+pub struct Node<'a, T> {
+    pub key: &'a str,
+    pub value: T,
+    pub deps: Vec<&'a str>,
+}
+
+pub enum Scc<T> {
+    Acyclic(T),
+    Cyclic(Vec<T>),
 }
 
 /// Iterative Tarjan's SCC. Mirrors Haskell's `Data.Graph.stronglyConnComp`.
-pub fn strongly_connected_components<'a>(
-    nodes: &[&'a str],
-    edges: &BTreeMap<&'a str, Vec<&'a str>>,
-) -> Vec<Scc<'a>> {
+///
+/// Takes ownership of nodes, runs Tarjan on the key/deps graph,
+/// then moves each node's `.value` into the SCC result.
+pub fn strongly_connected_components<T>(nodes: Vec<Node<'_, T>>) -> Vec<Scc<T>> {
     let n = nodes.len();
     let mut index_of: BTreeMap<&str, usize> = BTreeMap::new();
-    for (i, &node) in nodes.iter().enumerate() {
-        index_of.insert(node, i);
+    for (i, node) in nodes.iter().enumerate() {
+        index_of.insert(node.key, i);
     }
 
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut has_self_edge = vec![false; n];
-    for (i, &node) in nodes.iter().enumerate() {
-        if let Some(deps) = edges.get(node) {
-            for &dep in deps {
-                if let Some(&j) = index_of.get(dep) {
-                    if i == j {
-                        has_self_edge[i] = true;
-                    } else {
-                        adj[i].push(j);
-                    }
+    for (i, node) in nodes.iter().enumerate() {
+        for dep in &node.deps {
+            if let Some(&j) = index_of.get(dep) {
+                if i == j {
+                    has_self_edge[i] = true;
+                } else {
+                    adj[i].push(j);
                 }
             }
         }
     }
 
+    tarjan(n, &adj, &has_self_edge, nodes)
+}
+
+fn tarjan<T>(
+    n: usize,
+    adj: &[Vec<usize>],
+    has_self_edge: &[bool],
+    nodes: Vec<Node<'_, T>>,
+) -> Vec<Scc<T>> {
     let mut order: Vec<usize> = vec![0; n];
     let mut lowlink: Vec<usize> = vec![0; n];
     let mut on_stack: Vec<bool> = vec![false; n];
@@ -74,7 +87,9 @@ pub fn strongly_connected_components<'a>(
                 if lowlink[v] == order[v] {
                     let mut component = Vec::new();
                     loop {
-                        let w = stack.pop().unwrap();
+                        let w = stack
+                            .pop()
+                            .expect("SCC stack contains root by Tarjan invariant");
                         on_stack[w] = false;
                         component.push(w);
                         if w == v {
@@ -84,16 +99,17 @@ pub fn strongly_connected_components<'a>(
                     result_sccs.push(component);
                 }
 
-                let finished_v = v;
                 let finished_lowlink = lowlink[v];
                 work.pop();
                 if let Some((parent, _, _)) = work.last() {
                     lowlink[*parent] = lowlink[*parent].min(finished_lowlink);
-                    let _ = finished_v;
                 }
             }
         }
     }
+
+    // Move values out of nodes so we can return them in SCC order.
+    let mut values: Vec<Option<T>> = nodes.into_iter().map(|n| Some(n.value)).collect();
 
     // Tarjan emits SCCs with leaves (no dependencies) first,
     // which is exactly the processing order we want (deps before dependents).
@@ -101,9 +117,18 @@ pub fn strongly_connected_components<'a>(
         .into_iter()
         .map(|component| {
             if component.len() == 1 && !has_self_edge[component[0]] {
-                Scc::Acyclic(nodes[component[0]])
+                Scc::Acyclic(
+                    values[component[0]]
+                        .take()
+                        .expect("each node consumed exactly once"),
+                )
             } else {
-                Scc::Cyclic(component.into_iter().map(|i| nodes[i]).collect())
+                Scc::Cyclic(
+                    component
+                        .into_iter()
+                        .map(|i| values[i].take().expect("each node consumed exactly once"))
+                        .collect(),
+                )
             }
         })
         .collect()

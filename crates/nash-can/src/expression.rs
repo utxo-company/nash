@@ -299,10 +299,6 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
         } => {
             // Build: a -> b -> ... -> TypeName a b
             let free_vars: FreeVars<'a> = bump.alloc_slice_fill_iter(type_vars.iter().copied());
-            let var_types: Vec<_> = type_vars
-                .iter()
-                .map(|v| &*bump.alloc(Located::at(Region::zero(), CanType::Var(v))))
-                .collect();
             let result_type: &Located<CanType> = bump.alloc(Located::at(
                 Region::zero(),
                 CanType::Named {
@@ -310,7 +306,11 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
                         home: *home,
                         name: type_name,
                     },
-                    args: bump.alloc_slice_fill_iter(var_types),
+                    args: bump.alloc_slice_fill_iter(
+                        type_vars
+                            .iter()
+                            .map(|v| &*bump.alloc(Located::at(Region::zero(), CanType::Var(v)))),
+                    ),
                 },
             ));
             // foldr TLambda result args
@@ -334,6 +334,31 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
                 annotation,
             }
         }
+        EnvCtor::Bool { home, union, index } => {
+            let annotation = bump.alloc(Annotation {
+                free_vars: &[],
+                typ: bump.alloc(Located::at(
+                    Region::zero(),
+                    CanType::Named {
+                        reference: QualifiedName {
+                            home: *home,
+                            name: union.name.value,
+                        },
+                        args: &[],
+                    },
+                )),
+            });
+            CanExpr::VarConstructor {
+                options: union.options,
+                reference: ConstructorName {
+                    home: *home,
+                    union: union.name.value,
+                    name,
+                },
+                index: *index,
+                annotation,
+            }
+        }
         EnvCtor::RecordCtor {
             home,
             alias_name,
@@ -351,32 +376,23 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
                 .collect();
             let free_vars: FreeVars<'a> = bump.alloc_slice_fill_iter(free_vars_set);
 
-            let fields: Vec<nash_ast::FieldType<'a>> = field_names
-                .iter()
-                .zip(field_types.iter())
-                .enumerate()
-                .map(|(i, (fname, ftyp))| nash_ast::FieldType {
-                    index: i as u16,
-                    field: fname,
-                    typ: ftyp,
-                })
-                .collect();
             let record_type: &Located<CanType> = bump.alloc(Located::at(
                 Region::zero(),
                 CanType::Record {
-                    fields: bump.alloc_slice_fill_iter(fields),
+                    fields: bump.alloc_slice_fill_iter(
+                        field_names.iter().zip(field_types.iter()).enumerate().map(
+                            |(i, (fname, ftyp))| nash_ast::FieldType {
+                                index: i as u16,
+                                field: fname,
+                                typ: ftyp,
+                            },
+                        ),
+                    ),
                     ext: None,
                 },
             ));
 
             // Wrap in Alias { target: Filled(record) } like Elm's toRecordCtor
-            let alias_args: Vec<nash_ast::AliasArgument<'a>> = type_vars
-                .iter()
-                .map(|v| nash_ast::AliasArgument {
-                    name: v,
-                    typ: bump.alloc(Located::at(Region::zero(), CanType::Var(v))),
-                })
-                .collect();
             let result_type: &Located<CanType> = bump.alloc(Located::at(
                 Region::zero(),
                 CanType::Alias {
@@ -384,7 +400,12 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
                         home: *home,
                         name: alias_name,
                     },
-                    arguments: bump.alloc_slice_fill_iter(alias_args),
+                    arguments: bump.alloc_slice_fill_iter(type_vars.iter().map(|v| {
+                        nash_ast::AliasArgument {
+                            name: v,
+                            typ: bump.alloc(Located::at(Region::zero(), CanType::Var(v))),
+                        }
+                    })),
                     target: nash_ast::AliasType::Filled(record_type),
                 },
             ));
@@ -558,9 +579,8 @@ fn canonicalize_if<'a>(
         return Err(errors);
     }
     let can_else = canonicalize_expr(bump, env, final_else, free_locals, warnings)?;
-    let bs = bump.alloc_slice_fill_iter(can_branches);
     Ok(CanExpr::If {
-        branches: bs,
+        branches: bump.alloc_slice_fill_iter(can_branches),
         final_else: can_else,
     })
 }
@@ -616,10 +636,8 @@ fn canonicalize_update<'a>(
     for field in fields {
         match canonicalize_expr(bump, env, field.value, free_locals, warnings) {
             Ok(value) => {
-                let f = field.field;
                 can_fields.push(CanFieldUpdate {
-                    field: f.value,
-                    region: f.region,
+                    field: field.field,
                     value,
                 });
             }
@@ -820,15 +838,24 @@ fn canonicalize_let<'a>(
     );
     merge_free_locals(free_locals, outer_free, false);
 
-    let node_names: Vec<&'a str> = nodes.iter().map(|(n, _)| *n).collect();
-    let binding_map: BTreeMap<&'a str, LetBinding<'a>> = nodes.into_iter().collect();
-    let sccs = scc::strongly_connected_components(&node_names, &edges);
+    let scc_nodes: Vec<scc::Node<'_, (&'a str, LetBinding<'a>)>> = nodes
+        .into_iter()
+        .map(|(name, binding)| {
+            let deps = edges.remove(name).unwrap_or_default();
+            scc::Node {
+                key: name,
+                value: (name, binding),
+                deps,
+            }
+        })
+        .collect();
+    let sccs = scc::strongly_connected_components(scc_nodes);
 
     let mut result = can_body;
     for scc_group in sccs.into_iter().rev() {
         match scc_group {
-            scc::Scc::Acyclic(name) => match binding_map.get(name) {
-                Some(LetBinding::Define(def)) => {
+            scc::Scc::Acyclic((_, binding)) => match binding {
+                LetBinding::Define(def) => {
                     result = bump.alloc(Located::at(
                         region,
                         CanExpr::Let {
@@ -837,7 +864,7 @@ fn canonicalize_let<'a>(
                         },
                     ));
                 }
-                Some(LetBinding::Destruct(pat, val)) => {
+                LetBinding::Destruct(pat, val) => {
                     result = bump.alloc(Located::at(
                         region,
                         CanExpr::LetDestruct {
@@ -847,10 +874,10 @@ fn canonicalize_let<'a>(
                         },
                     ));
                 }
-                Some(LetBinding::Edge(_)) | None => {}
+                LetBinding::Edge(_) => {}
             },
-            scc::Scc::Cyclic(names) => {
-                let cycle_defs = check_let_cycle(bump, &binding_map, &names)?;
+            scc::Scc::Cyclic(pairs) => {
+                let cycle_defs = check_let_cycle(bump, &pairs)?;
                 result = bump.alloc(Located::at(
                     region,
                     CanExpr::LetRec {
@@ -1019,13 +1046,12 @@ fn canonicalize_let_def<'a>(
 
 fn check_let_cycle<'a>(
     bump: &'a Bump,
-    binding_map: &BTreeMap<&'a str, LetBinding<'a>>,
-    names: &[&'a str],
+    pairs: &[(&'a str, LetBinding<'a>)],
 ) -> Result<Vec<&'a CanDef<'a>>, Vec<Error<'a>>> {
     let mut defs = Vec::new();
-    for &name in names {
-        match binding_map.get(name) {
-            Some(LetBinding::Define(def)) => {
+    for &(name, ref binding) in pairs {
+        match binding {
+            LetBinding::Define(def) => {
                 let has_args = match def {
                     CanDef::Def { args, .. } => !args.is_empty(),
                     CanDef::TypedDef { args, .. } => !args.is_empty(),
@@ -1034,8 +1060,11 @@ fn check_let_cycle<'a>(
                     let def_name = match def {
                         CanDef::Def { name, .. } | CanDef::TypedDef { name, .. } => *name,
                     };
-                    let others: Vec<&'a str> =
-                        names.iter().filter(|n| **n != name).copied().collect();
+                    let others: Vec<&'a str> = pairs
+                        .iter()
+                        .filter(|(n, _)| *n != name)
+                        .map(|(n, _)| *n)
+                        .collect();
                     return Err(vec![Error::RecursiveLet {
                         name: def_name,
                         others: bump.alloc_slice_fill_iter(others),
@@ -1043,14 +1072,18 @@ fn check_let_cycle<'a>(
                 }
                 defs.push(*def);
             }
-            Some(LetBinding::Edge(name_loc)) => {
-                let others: Vec<&'a str> = names.iter().filter(|n| **n != name).copied().collect();
+            LetBinding::Edge(name_loc) => {
+                let others: Vec<&'a str> = pairs
+                    .iter()
+                    .filter(|(n, _)| *n != name)
+                    .map(|(n, _)| *n)
+                    .collect();
                 return Err(vec![Error::RecursiveLet {
                     name: name_loc,
                     others: bump.alloc_slice_fill_iter(others),
                 }]);
             }
-            _ => {}
+            LetBinding::Destruct(..) => {}
         }
     }
     Ok(defs)
@@ -1077,8 +1110,14 @@ pub fn gather_typed_args<'a>(
             _ => {
                 return Err(vec![Error::AnnotationTooShort {
                     region: Region::span_across(
-                        &can_args.first().unwrap().region,
-                        &can_args.last().unwrap().region,
+                        &can_args
+                            .first()
+                            .expect("non-empty: inside for loop over can_args")
+                            .region,
+                        &can_args
+                            .last()
+                            .expect("non-empty: inside for loop over can_args")
+                            .region,
                     ),
                     name: func_name,
                 }]);

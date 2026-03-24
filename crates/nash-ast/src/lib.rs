@@ -204,8 +204,7 @@ pub struct CaseBranch<'a> {
 
 #[derive(Debug)]
 pub struct FieldUpdate<'a> {
-    pub field: &'a str,
-    pub region: Region,
+    pub field: &'a Located<&'a str>,
     pub value: &'a Located<Expr<'a>>,
 }
 

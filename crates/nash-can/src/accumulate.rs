@@ -27,10 +27,9 @@ pub fn accumulate3<'a, A, B, C>(
     let a = collect_result(a, &mut errors);
     let b = collect_result(b, &mut errors);
     let c = collect_result(c, &mut errors);
-    if errors.is_empty() {
-        Ok((a.unwrap(), b.unwrap(), c.unwrap()))
-    } else {
-        Err(errors)
+    match (a, b, c) {
+        (Some(a), Some(b), Some(c)) => Ok((a, b, c)),
+        _ => Err(errors),
     }
 }
 

@@ -2,15 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bumpalo::Bump;
 use nash_ast::{
-    Alias as CanAlias, Associativity as CanAssociativity, Binop as CanBinop, Ctor as CanCtor,
-    CtorOpts, Decls, Export, Exports, Module as CanModule, ModuleName, PackageName,
-    Precedence as CanPrecedence, Union as CanUnion,
+    Alias as CanAlias, Binop as CanBinop, Ctor as CanCtor, CtorOpts, Decls, Export, Exports,
+    Module as CanModule, ModuleName, PackageName, Union as CanUnion,
 };
 use nash_region::{Located, Region};
 use nash_source::{
-    Alias as SourceAlias, Associativity as SourceAssociativity, Ctor as SourceCtor, Exposed,
-    Exposing, Infix, Module as SourceModule, Precedence as SourcePrecedence, Privacy,
-    Type as SourceType, Union as SourceUnion, Value as SourceValue,
+    Alias as SourceAlias, Ctor as SourceCtor, Exposed, Exposing, Infix, Module as SourceModule,
+    Privacy, Type as SourceType, Union as SourceUnion, Value as SourceValue,
 };
 
 use crate::accumulate;
@@ -80,7 +78,6 @@ pub fn canonicalize<'a>(
         binops,
     };
 
-    // Check for unused imports
     let used_modules = collect_used_modules(&can_module);
     for import in module.imports {
         let module_name = import.import.value;
@@ -123,9 +120,8 @@ fn canonicalize_decls<'a>(
     let top_level_names: BTreeSet<&str> = nodes.iter().map(|n| n.name).collect();
 
     // Phase 1: SCC on ALL dependencies
-    let names: Vec<&str> = nodes.iter().map(|n| n.name).collect();
-    let all_edges: BTreeMap<&str, Vec<&str>> = nodes
-        .iter()
+    let scc_nodes: Vec<scc::Node<'_, NodeOne<'a>>> = nodes
+        .into_iter()
         .map(|node| {
             let deps: Vec<&str> = node
                 .free_locals
@@ -133,29 +129,33 @@ fn canonicalize_decls<'a>(
                 .filter(|k| top_level_names.contains(*k))
                 .copied()
                 .collect();
-            (node.name, deps)
+            scc::Node {
+                key: node.name,
+                value: node,
+                deps,
+            }
         })
         .collect();
-    let phase1_sccs = scc::strongly_connected_components(&names, &all_edges);
-
-    let node_map: BTreeMap<&str, &NodeOne<'a>> = nodes.iter().map(|n| (n.name, n)).collect();
+    let phase1_sccs = scc::strongly_connected_components(scc_nodes);
 
     let mut decls: &'a Decls<'a> = bump.alloc(Decls::Empty);
     for scc_group in phase1_sccs.into_iter().rev() {
         match scc_group {
-            scc::Scc::Acyclic(name) => {
+            scc::Scc::Acyclic(node) => {
                 decls = bump.alloc(Decls::Declare {
-                    definition: node_map[name].def,
+                    definition: node.def,
                     next: decls,
                 });
             }
-            scc::Scc::Cyclic(group_names) => {
+            scc::Scc::Cyclic(group) => {
                 // Phase 2: SCC on DIRECT deps within cyclic group
-                let group_set: BTreeSet<&str> = group_names.iter().copied().collect();
-                let direct_edges: BTreeMap<&str, Vec<&str>> = group_names
+                let group_map: BTreeMap<&str, NodeOne<'a>> =
+                    group.into_iter().map(|n| (n.name, n)).collect();
+                let group_set: BTreeSet<&str> = group_map.keys().copied().collect();
+
+                let phase2_nodes: Vec<scc::Node<'_, &str>> = group_map
                     .iter()
-                    .map(|&name| {
-                        let node = node_map[name];
+                    .map(|(&name, node)| {
                         let deps = if node.has_args {
                             vec![] // functions: body is delayed
                         } else {
@@ -165,25 +165,31 @@ fn canonicalize_decls<'a>(
                                 .map(|(k, _)| *k)
                                 .collect()
                         };
-                        (name, deps)
+                        scc::Node {
+                            key: name,
+                            value: name,
+                            deps,
+                        }
                     })
                     .collect();
 
-                let phase2_sccs = scc::strongly_connected_components(&group_names, &direct_edges);
+                let phase2_sccs = scc::strongly_connected_components(phase2_nodes);
 
                 let mut rec_defs: Vec<&'a nash_ast::Def<'a>> = Vec::new();
-                for sub_scc in &phase2_sccs {
+                for sub_scc in phase2_sccs {
                     match sub_scc {
                         scc::Scc::Acyclic(name) => {
-                            rec_defs.push(node_map[name].def);
+                            rec_defs.push(group_map[name].def);
                         }
                         scc::Scc::Cyclic(bad_names) => {
                             let first = bad_names[0];
-                            let def_name = def_located_name(node_map[first].def);
-                            let others: Vec<&str> = bad_names[1..].to_vec();
+                            let def_name = match group_map[first].def {
+                                nash_ast::Def::Def { name, .. }
+                                | nash_ast::Def::TypedDef { name, .. } => name,
+                            };
                             return Err(vec![Error::RecursiveDecl {
                                 name: def_name,
-                                others: bump.alloc_slice_fill_iter(others),
+                                others: bump.alloc_slice_fill_iter(bad_names[1..].iter().copied()),
                             }]);
                         }
                     }
@@ -200,12 +206,6 @@ fn canonicalize_decls<'a>(
         }
     }
     Ok(decls)
-}
-
-fn def_located_name<'a>(def: &'a nash_ast::Def<'a>) -> &'a Located<&'a str> {
-    match def {
-        nash_ast::Def::Def { name, .. } | nash_ast::Def::TypedDef { name, .. } => name,
-    }
 }
 
 struct NodeOne<'a> {
@@ -351,49 +351,47 @@ fn canonicalize_aliases<'a>(
 ) -> Result<&'a [&'a Located<CanAlias<'a>>], Vec<Error<'a>>> {
     let alias_names: BTreeSet<&str> = source_aliases.iter().map(|a| a.value.name.value).collect();
 
-    let mut edges: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for alias in source_aliases {
-        let mut deps = Vec::new();
-        collect_type_edges(&alias.value.typ.value, &alias_names, &mut deps);
-        edges.insert(alias.value.name.value, deps);
-    }
-
-    let names: Vec<&str> = source_aliases.iter().map(|a| a.value.name.value).collect();
-    let sccs = scc::strongly_connected_components(&names, &edges);
+    let scc_nodes: Vec<scc::Node<'_, &'a Located<SourceAlias<'a>>>> = source_aliases
+        .iter()
+        .map(|&alias| {
+            let mut deps = Vec::new();
+            collect_type_edges(&alias.value.typ.value, &alias_names, &mut deps);
+            scc::Node {
+                key: alias.value.name.value,
+                value: alias,
+                deps,
+            }
+        })
+        .collect();
+    let sccs = scc::strongly_connected_components(scc_nodes);
 
     let mut results: BTreeMap<&str, &Located<CanAlias>> = BTreeMap::new();
-    for component in &sccs {
+    for component in sccs {
         match component {
-            scc::Scc::Acyclic(name) => {
-                let source = source_aliases
-                    .iter()
-                    .find(|a| a.value.name.value == *name)
-                    .unwrap();
+            scc::Scc::Acyclic(source) => {
                 check_alias_free_vars(bump, source)?;
                 let alias = canonicalize_single_alias(bump, env, source)?;
                 environment::local::add_alias_type(bump, env, &alias.value);
-                results.insert(name, alias);
+                results.insert(source.value.name.value, alias);
             }
-            scc::Scc::Cyclic(cycle_names) => {
-                let first = source_aliases
-                    .iter()
-                    .find(|a| a.value.name.value == cycle_names[0])
-                    .unwrap();
+            scc::Scc::Cyclic(cycle) => {
+                let first = &cycle[0];
                 return Err(vec![Error::RecursiveAlias {
                     region: first.value.name.region,
-                    name: cycle_names[0],
+                    name: first.value.name.value,
                     args: bump.alloc_slice_fill_iter(first.value.arguments.iter().map(|a| a.value)),
-                    others: bump.alloc_slice_fill_iter(cycle_names[1..].iter().copied()),
+                    others: bump
+                        .alloc_slice_fill_iter(cycle[1..].iter().map(|a| a.value.name.value)),
                 }]);
             }
         }
     }
 
-    Ok(bump.alloc_slice_fill_iter(
-        source_aliases
-            .iter()
-            .map(|a| *results.get(a.value.name.value).unwrap()),
-    ))
+    Ok(bump.alloc_slice_fill_iter(source_aliases.iter().map(|a| {
+        *results
+            .get(a.value.name.value)
+            .expect("all acyclic aliases inserted into results")
+    })))
 }
 
 fn canonicalize_single_alias<'a>(
@@ -449,7 +447,9 @@ fn check_union_free_vars<'a>(
         Ok(())
     } else {
         let args = bump.alloc_slice_fill_iter(u.arguments.iter().map(|a| a.value));
-        let (first_unbound, rest_unbound) = unbound.split_first().unwrap();
+        let (first_unbound, rest_unbound) = unbound
+            .split_first()
+            .expect("unbound is non-empty: guarded by is_empty check");
         Err(vec![Error::TypeVarsUnboundInUnion {
             region: union.region,
             name: u.name.value,
@@ -631,24 +631,12 @@ fn canonicalize_binops<'a>(
             binop.region,
             CanBinop {
                 symbol: binop.value.op,
-                associativity: canonicalize_associativity(binop.value.associativity),
-                precedence: canonicalize_precedence(binop.value.precedence),
+                associativity: binop.value.associativity,
+                precedence: binop.value.precedence,
                 function: binop.value.name,
             },
         ))
     }))
-}
-
-fn canonicalize_associativity(associativity: SourceAssociativity) -> CanAssociativity {
-    match associativity {
-        SourceAssociativity::Left => CanAssociativity::Left,
-        SourceAssociativity::None => CanAssociativity::None,
-        SourceAssociativity::Right => CanAssociativity::Right,
-    }
-}
-
-fn canonicalize_precedence(precedence: SourcePrecedence) -> CanPrecedence {
-    CanPrecedence(precedence.0)
 }
 
 fn canonicalize_exposed<'a>(
@@ -829,7 +817,7 @@ fn collect_from_expr<'a>(
             ..
         } => {
             add_if_foreign(home, reference.home, used);
-            collect_from_annotation(annotation, home, used);
+            collect_from_type(&annotation.typ.value, home, used);
         }
         VarOperator {
             reference,
@@ -838,7 +826,7 @@ fn collect_from_expr<'a>(
         } => {
             add_if_foreign(home, reference.home, used);
             if let Some(ann) = annotation {
-                collect_from_annotation(ann, home, used);
+                collect_from_type(&ann.typ.value, home, used);
             }
         }
         Binop {
@@ -850,7 +838,7 @@ fn collect_from_expr<'a>(
         } => {
             add_if_foreign(home, reference.home, used);
             if let Some(ann) = annotation {
-                collect_from_annotation(ann, home, used);
+                collect_from_type(&ann.typ.value, home, used);
             }
             collect_from_expr(&left.value, home, used);
             collect_from_expr(&right.value, home, used);
@@ -1030,14 +1018,6 @@ fn collect_from_type<'a>(
             }
         }
     }
-}
-
-fn collect_from_annotation<'a>(
-    ann: &nash_ast::Annotation<'a>,
-    home: ModuleName<'a>,
-    used: &mut BTreeSet<&'a str>,
-) {
-    collect_from_type(&ann.typ.value, home, used);
 }
 
 #[cfg(test)]

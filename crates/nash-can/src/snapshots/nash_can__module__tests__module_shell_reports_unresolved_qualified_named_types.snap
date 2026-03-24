@@ -19,7 +19,9 @@ description: "Code:\n\nmodule Main exposing (Wrapped)\n\ntype alias Wrapped = Mi
         ),
         name: "Maybe",
         suggestions: PossibleNames {
-            locals: [],
+            locals: [
+                "List",
+            ],
             qualified: [],
         },
     },

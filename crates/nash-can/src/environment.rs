@@ -64,6 +64,14 @@ pub enum Ctor<'a> {
         options: CtorOpts,
         alternatives: u16,
     },
+    /// Built-in Bool constructor (True or False from Basics).
+    /// Separated from `Union` so pattern/expression canonicalization can
+    /// emit `CanPattern::Bool` / synthesize the annotation without string checks.
+    Bool {
+        home: ModuleName<'a>,
+        union: &'a nash_ast::Union<'a>,
+        index: u16,
+    },
     /// Record alias ctor (e.g., `Point` from `type alias Point = { x : Int, y : Int }`).
     /// Elm creates these automatically for non-extensible record aliases.
     RecordCtor {
@@ -278,23 +286,18 @@ pub fn merge_exposed<'a, T: Clone>(
         Entry::Vacant(e) => {
             e.insert(Info::Specific(home, value));
         }
-        Entry::Occupied(mut e) => {
-            let make_ambiguous = match e.get() {
-                Info::Specific(existing, _) if existing.name != home.name => Some(*existing),
-                _ => None,
-            };
-
-            if let Some(first) = make_ambiguous {
+        Entry::Occupied(mut e) => match e.get() {
+            Info::Specific(existing, _) if existing.name != home.name => {
+                let first = *existing;
                 e.insert(Info::Ambiguous(first, vec![home]));
-            } else {
-                match e.get_mut() {
-                    Info::Ambiguous(_, others) if !others.iter().any(|h| h.name == home.name) => {
-                        others.push(home);
-                    }
-                    _ => {}
+            }
+            Info::Ambiguous(_, others) if !others.iter().any(|h| h.name == home.name) => {
+                if let Info::Ambiguous(_, others) = e.get_mut() {
+                    others.push(home);
                 }
             }
-        }
+            _ => {}
+        },
     }
 }
 

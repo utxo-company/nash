@@ -103,24 +103,24 @@ fn extract_values<'a>(
     let mut names = Vec::new();
     collect_decl_names(decls, &mut names);
 
-    let values: Vec<InterfaceValue<'a>> = match exports {
-        Exports::Everything(_) => names
-            .into_iter()
-            .map(|name| InterfaceValue {
+    match exports {
+        Exports::Everything(_) => {
+            bump.alloc_slice_fill_iter(names.into_iter().map(|name| InterfaceValue {
                 name,
                 annotation: None,
-            })
-            .collect(),
-        Exports::Explicit(exports) => names
-            .into_iter()
-            .filter(|name| is_exported_value(exports, name))
-            .map(|name| InterfaceValue {
-                name,
-                annotation: None,
-            })
-            .collect(),
-    };
-    bump.alloc_slice_fill_iter(values)
+            }))
+        }
+        Exports::Explicit(exports) => bump.alloc_slice_fill_iter(
+            names
+                .into_iter()
+                .filter(|name| is_exported_value(exports, name))
+                .map(|name| InterfaceValue {
+                    name,
+                    annotation: None,
+                })
+                .collect::<Vec<_>>(),
+        ),
+    }
 }
 
 fn collect_decl_names<'a>(decls: &Decls<'a>, names: &mut Vec<&'a str>) {
@@ -195,22 +195,23 @@ fn extract_binops<'a>(
     exports: &Exports<'a>,
     binops: &'a [&'a Located<CanBinop<'a>>],
 ) -> &'a [InterfaceBinop<'a>] {
-    let binops: Vec<InterfaceBinop<'a>> = binops
-        .iter()
-        .filter_map(|binop| {
-            if is_exported_binop(exports, binop.value.symbol) {
-                Some(InterfaceBinop {
-                    symbol: binop.value.symbol,
-                    associativity: binop.value.associativity,
-                    precedence: binop.value.precedence,
-                    function: binop.value.function,
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    bump.alloc_slice_fill_iter(binops)
+    bump.alloc_slice_fill_iter(
+        binops
+            .iter()
+            .filter_map(|binop| {
+                if is_exported_binop(exports, binop.value.symbol) {
+                    Some(InterfaceBinop {
+                        symbol: binop.value.symbol,
+                        associativity: binop.value.associativity,
+                        precedence: binop.value.precedence,
+                        function: binop.value.function,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn union_visibility(exports: &Exports<'_>, name: &str) -> UnionVisibility {
@@ -233,12 +234,14 @@ fn alias_visibility(exports: &Exports<'_>, name: &str) -> AliasVisibility {
     match exports {
         Exports::Everything(_) => AliasVisibility::Public,
         Exports::Explicit(exports) => {
-            for export in exports.iter() {
-                if matches!(&export.value, Export::Alias(n) if *n == name) {
-                    return AliasVisibility::Public;
-                }
+            if exports
+                .iter()
+                .any(|e| matches!(&e.value, Export::Alias(n) if *n == name))
+            {
+                AliasVisibility::Public
+            } else {
+                AliasVisibility::Private
             }
-            AliasVisibility::Private
         }
     }
 }

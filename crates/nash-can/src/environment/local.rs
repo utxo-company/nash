@@ -83,16 +83,24 @@ pub fn add_ctors<'a>(
 
     for union in unions {
         for ctor in union.value.ctors {
-            let info = Ctor::Union {
-                home: env.home,
-                type_name: union.value.name.value,
-                type_vars: union.value.parameters,
-                union: &union.value,
-                index: ctor.index,
-                arity: ctor.arity,
-                arguments: ctor.arguments,
-                options: union.value.options,
-                alternatives: union.value.alternatives,
+            let info = if env.home.name == "Basics" && union.value.name.value == "Bool" {
+                Ctor::Bool {
+                    home: env.home,
+                    union: &union.value,
+                    index: ctor.index,
+                }
+            } else {
+                Ctor::Union {
+                    home: env.home,
+                    type_name: union.value.name.value,
+                    type_vars: union.value.parameters,
+                    union: &union.value,
+                    index: ctor.index,
+                    arity: ctor.arity,
+                    arguments: ctor.arguments,
+                    options: union.value.options,
+                    alternatives: union.value.alternatives,
+                }
             };
             env.insert_local_ctor(ctor.name, info);
         }

@@ -184,6 +184,11 @@ fn canonicalize_ctor_pattern<'a>(
             }))
         }
 
+        environment::Ctor::Bool { union, .. } => Ok(CanPattern::Bool {
+            union,
+            value: name == "True",
+        }),
+
         environment::Ctor::RecordCtor { .. } => {
             Err(vec![Error::PatternHasRecordCtor { region, name }])
         }
@@ -314,6 +319,59 @@ mod tests {
         env
     }
 
+    fn env_with_bool<'a>(bump: &'a Bump) -> Env<'a> {
+        let home = ModuleName {
+            package: None,
+            name: "Basics",
+        };
+        let mut env = empty_env(bump);
+
+        let true_ctor = bump.alloc(nash_ast::Ctor {
+            name: "True",
+            index: 0,
+            arity: 0,
+            arguments: &[],
+        });
+        let false_ctor = bump.alloc(nash_ast::Ctor {
+            name: "False",
+            index: 1,
+            arity: 0,
+            arguments: &[],
+        });
+        let bool_union: &Union = bump.alloc(Union {
+            name: bump.alloc(Located::at(Region::zero(), "Bool")),
+            parameters: &[],
+            ctors: bump.alloc_slice_fill_iter([&*true_ctor, &*false_ctor]),
+            alternatives: 2,
+            options: CtorOpts::Enum,
+        });
+
+        env.ctors.insert(
+            "True",
+            Info::Specific(
+                home,
+                Ctor::Bool {
+                    home,
+                    union: bool_union,
+                    index: 0,
+                },
+            ),
+        );
+        env.ctors.insert(
+            "False",
+            Info::Specific(
+                home,
+                Ctor::Bool {
+                    home,
+                    union: bool_union,
+                    index: 1,
+                },
+            ),
+        );
+
+        env
+    }
+
     fn parse_pattern<'a>(bump: &'a Bump, input: &str) -> &'a Located<SourcePattern<'a>> {
         let src = bump.alloc_str(input);
         let mut parser = nash_parse::Parser::new(bump, src.as_bytes());
@@ -411,6 +469,16 @@ mod tests {
     #[test]
     fn ctor_with_args() {
         assert_pattern_snapshot!("Just x", env_with_maybe);
+    }
+
+    #[test]
+    fn bool_true_pattern() {
+        assert_pattern_snapshot!("True", env_with_bool);
+    }
+
+    #[test]
+    fn bool_false_pattern() {
+        assert_pattern_snapshot!("False", env_with_bool);
     }
 
     #[test]

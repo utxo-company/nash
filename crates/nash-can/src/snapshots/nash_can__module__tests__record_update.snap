@@ -93,16 +93,18 @@ Module {
                     },
                     fields: [
                         FieldUpdate {
-                            field: "x",
-                            region: Region {
-                                start: Position {
-                                    line: 3,
-                                    column: 13,
+                            field: Located {
+                                region: Region {
+                                    start: Position {
+                                        line: 3,
+                                        column: 13,
+                                    },
+                                    end: Position {
+                                        line: 3,
+                                        column: 14,
+                                    },
                                 },
-                                end: Position {
-                                    line: 3,
-                                    column: 14,
-                                },
+                                value: "x",
                             },
                             value: Located {
                                 region: Region {

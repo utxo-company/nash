@@ -26,11 +26,26 @@ pub fn create_initial_env<'a>(
         q_ctors: BTreeMap::new(),
     };
 
+    // Pre-seed List — always in scope for type annotations, like Elm's emptyTypes.
+    let list_home = ModuleName {
+        package: None,
+        name: "List",
+    };
+    env.types.insert(
+        "List",
+        super::Info::Specific(
+            list_home,
+            Type::Union {
+                arity: 1,
+                home: list_home,
+            },
+        ),
+    );
+
     for import in imports {
         let interface = find_interface(interfaces, import)?;
-        let prefix = import_prefix(import);
+        let prefix = import.alias.unwrap_or(import.import.value);
 
-        // Qualified lookups are always available
         add_qualified_types(&mut env, interface, prefix);
         add_qualified_ctors(bump, &mut env, interface, prefix);
         add_qualified_values(&mut env, interface, prefix);
@@ -309,13 +324,12 @@ fn find_and_expose_type<'a>(
 }
 
 fn expose_union_ctors<'a>(env: &mut Env<'a>, interface: &Interface<'a>, union_name: &'a str) {
+    let q_ctor_map = env.q_ctors.get(interface.home.name);
     for union in interface.unions {
         if union.name == union_name {
             for ctor in union.ctors {
-                if let Some(super::Info::Specific(_, ctor_info)) = env
-                    .q_ctors
-                    .get(interface.home.name)
-                    .and_then(|m| m.get(ctor.name))
+                if let Some(super::Info::Specific(_, ctor_info)) =
+                    q_ctor_map.and_then(|m| m.get(ctor.name))
                 {
                     merge_exposed(&mut env.ctors, ctor.name, interface.home, *ctor_info);
                 }
@@ -345,11 +359,9 @@ fn expose_record_ctor_if_applicable<'a>(
 // --- Lookup helpers ---
 
 fn lookup_qualified_ctor<'a>(env: &Env<'a>, module: &str, name: &str) -> Option<Ctor<'a>> {
-    if let Some(super::Info::Specific(_, ctor)) = env.q_ctors.get(module).and_then(|m| m.get(name))
-    {
-        Some(*ctor)
-    } else {
-        None
+    match env.q_ctors.get(module)?.get(name)? {
+        super::Info::Specific(_, ctor) => Some(*ctor),
+        super::Info::Ambiguous(..) => None,
     }
 }
 
@@ -426,6 +438,13 @@ fn make_union_ctor<'a>(
     can_union: &'a nash_ast::Union<'a>,
     ctor: &nash_ast::Ctor<'a>,
 ) -> Ctor<'a> {
+    if home.name == "Basics" && union.name == "Bool" {
+        return Ctor::Bool {
+            home,
+            union: can_union,
+            index: ctor.index,
+        };
+    }
     Ctor::Union {
         home,
         type_name: union.name,
@@ -473,6 +492,23 @@ fn find_interface<'a>(
         })
 }
 
-fn import_prefix<'a>(import: &SourceImport<'a>) -> &'a str {
-    import.alias.unwrap_or(import.import.value)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_is_pre_seeded() {
+        let bump = Bump::new();
+        let home = ModuleName {
+            package: None,
+            name: "Test",
+        };
+        let env = create_initial_env(&bump, home, None, &[]).unwrap();
+        match env.types.get("List") {
+            Some(super::super::Info::Specific(module, Type::Union { arity: 1, .. })) => {
+                assert_eq!(module.name, "List");
+            }
+            other => panic!("Expected Specific List Union with arity 1, got {other:?}"),
+        }
+    }
 }
