@@ -1,8 +1,8 @@
 use bumpalo::Bump;
 use nash_ast::{
-    Alias as CanAlias, Associativity, Binop as CanBinop, Ctor as CanCtor, CtorOpts, Decls, Def,
-    Export, Exports, Module as CanModule, ModuleName, Precedence, Type as CanType,
-    Union as CanUnion,
+    Alias as CanAlias, AliasArgument, AliasType, Associativity, Binop as CanBinop, Ctor as CanCtor,
+    CtorOpts, Decls, Def, Export, Exports, FieldType, Module as CanModule, ModuleName, PackageName,
+    Precedence, QualifiedName, Type as CanType, Union as CanUnion,
 };
 use nash_region::Located;
 
@@ -252,5 +252,119 @@ fn is_exported_binop(exports: &Exports<'_>, symbol: &str) -> bool {
         Exports::Explicit(exports) => exports
             .iter()
             .any(|export| matches!(&export.value, Export::Binop(s) if *s == symbol)),
+    }
+}
+
+// ---- deep copy helpers ----
+
+fn copy_str<'d>(dst: &'d Bump, s: &str) -> &'d str {
+    dst.alloc_str(s)
+}
+
+fn copy_module_name<'d>(dst: &'d Bump, m: &ModuleName<'_>) -> ModuleName<'d> {
+    ModuleName {
+        package: m.package.map(|p| PackageName {
+            author: copy_str(dst, p.author),
+            project: copy_str(dst, p.project),
+        }),
+        name: copy_str(dst, m.name),
+    }
+}
+
+fn copy_qualified_name<'d>(dst: &'d Bump, q: &QualifiedName<'_>) -> QualifiedName<'d> {
+    QualifiedName {
+        home: copy_module_name(dst, &q.home),
+        name: copy_str(dst, q.name),
+    }
+}
+
+fn copy_located_type<'d>(dst: &'d Bump, lt: &Located<CanType<'_>>) -> &'d Located<CanType<'d>> {
+    dst.alloc(Located::at(lt.region, copy_type(dst, &lt.value)))
+}
+
+fn copy_type<'d>(dst: &'d Bump, t: &CanType<'_>) -> CanType<'d> {
+    match t {
+        CanType::Lambda { from, to } => CanType::Lambda {
+            from: copy_located_type(dst, from),
+            to: copy_located_type(dst, to),
+        },
+        CanType::Var(name) => CanType::Var(copy_str(dst, name)),
+        CanType::Named { reference, args } => CanType::Named {
+            reference: copy_qualified_name(dst, reference),
+            args: dst.alloc_slice_fill_iter(args.iter().map(|a| copy_located_type(dst, a))),
+        },
+        CanType::Record { fields, ext } => CanType::Record {
+            fields: dst.alloc_slice_fill_iter(fields.iter().map(|f| FieldType {
+                index: f.index,
+                field: copy_str(dst, f.field),
+                typ: copy_located_type(dst, f.typ),
+            })),
+            ext: ext.map(|e| copy_str(dst, e)),
+        },
+        CanType::Unit => CanType::Unit,
+        CanType::Tuple {
+            first,
+            second,
+            rest,
+        } => CanType::Tuple {
+            first: copy_located_type(dst, first),
+            second: copy_located_type(dst, second),
+            rest: dst.alloc_slice_fill_iter(rest.iter().map(|r| copy_located_type(dst, r))),
+        },
+        CanType::Alias {
+            reference,
+            arguments,
+            target,
+        } => CanType::Alias {
+            reference: copy_qualified_name(dst, reference),
+            arguments: dst.alloc_slice_fill_iter(arguments.iter().map(|a| AliasArgument {
+                name: copy_str(dst, a.name),
+                typ: copy_located_type(dst, a.typ),
+            })),
+            target: match target {
+                AliasType::Open(t) => AliasType::Open(copy_located_type(dst, t)),
+                AliasType::Filled(t) => AliasType::Filled(copy_located_type(dst, t)),
+            },
+        },
+    }
+}
+
+fn copy_ctor<'d>(dst: &'d Bump, c: &CanCtor<'_>) -> &'d CanCtor<'d> {
+    dst.alloc(CanCtor {
+        name: copy_str(dst, c.name),
+        index: c.index,
+        arity: c.arity,
+        arguments: dst.alloc_slice_fill_iter(c.arguments.iter().map(|a| copy_located_type(dst, a))),
+    })
+}
+
+/// Deep-copy an `Interface` into a different bump arena.
+pub fn deep_copy<'d>(dst: &'d Bump, src: &Interface<'_>) -> Interface<'d> {
+    Interface {
+        home: copy_module_name(dst, &src.home),
+        values: dst.alloc_slice_fill_iter(src.values.iter().map(|v| InterfaceValue {
+            name: copy_str(dst, v.name),
+            annotation: v.annotation.map(|a| copy_located_type(dst, a)),
+        })),
+        aliases: dst.alloc_slice_fill_iter(src.aliases.iter().map(|a| InterfaceAlias {
+            name: copy_str(dst, a.name),
+            parameters: dst.alloc_slice_fill_iter(a.parameters.iter().map(|p| copy_str(dst, p))),
+            typ: copy_located_type(dst, a.typ),
+            visibility: a.visibility,
+        })),
+        unions: dst.alloc_slice_fill_iter(src.unions.iter().map(|u| InterfaceUnion {
+            name: copy_str(dst, u.name),
+            parameters: dst.alloc_slice_fill_iter(u.parameters.iter().map(|p| copy_str(dst, p))),
+            ctors: dst.alloc_slice_fill_iter(u.ctors.iter().map(|c| copy_ctor(dst, c))),
+            alternatives: u.alternatives,
+            options: u.options,
+            visibility: u.visibility,
+        })),
+        binops: dst.alloc_slice_fill_iter(src.binops.iter().map(|b| InterfaceBinop {
+            symbol: copy_str(dst, b.symbol),
+            associativity: b.associativity,
+            precedence: b.precedence,
+            function: copy_str(dst, b.function),
+        })),
     }
 }

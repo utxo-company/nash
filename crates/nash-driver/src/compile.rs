@@ -55,38 +55,56 @@ impl BuildResult {
     }
 }
 
+/// Holds the output of compiling a single module.
+///
+/// The `_bump` field keeps the per-module arena alive so that `interface`
+/// (which was transmuted from the module bump's lifetime to `'static`)
+/// remains valid until the output is consumed by the main thread.
+struct CompileOutput {
+    uri: Url,
+    result: ModuleResult,
+    interface: Option<(String, nash_can::Interface<'static>)>,
+    warnings: Vec<String>,
+    _bump: Bump,
+}
+
 /// Compile all modules in the dependency graph.
 ///
-/// Modules are compiled level-by-level. Sources for each level are fetched
-/// in parallel, then compiled. Interfaces from earlier levels are passed to
-/// later levels for import resolution.
-///
-/// Within-level compilation is currently sequential because `Bump` is `!Sync`
-/// and `Context<'a>` ties the arena lifetime to the interface lifetime.
-/// Real parallelism would require either splitting those lifetimes or using
-/// per-module arenas with a post-level interface extraction step.
+/// Within each level, modules compile in parallel via `std::thread::scope`.
+/// Each thread gets its own `Bump`. After the level joins, interfaces are
+/// deep-copied into a shared `Bump` that outlives all module arenas.
 pub async fn build(db: Arc<Mutex<Database>>, graph: &DepGraph) -> BuildResult {
-    // Shared arena for interfaces that must outlive individual module compilations.
     let shared_bump = Bump::new();
     let mut results: HashMap<Url, ModuleResult> = HashMap::new();
     let mut interfaces: BTreeMap<&str, nash_can::Interface<'_>> = BTreeMap::new();
     let mut all_warnings: Vec<String> = Vec::new();
-    let levels = graph.levels();
 
-    for level in levels {
-        // Pre-fetch all sources for this level in parallel
+    for level in graph.levels() {
         let sources = fetch_sources(&db, &level).await;
 
-        // Compile each module (sequential — see doc comment above)
-        for (uri, source) in sources {
-            let result = compile_module(
-                &uri,
-                &source,
-                &shared_bump,
-                &mut interfaces,
-                &mut all_warnings,
-            );
-            results.insert(uri, result);
+        // Parallel: each thread gets its own Bump, reads &interfaces
+        let level_outputs: Vec<CompileOutput> = std::thread::scope(|s| {
+            sources
+                .iter()
+                .map(|(uri, src)| {
+                    let ifaces = &interfaces;
+                    s.spawn(move || compile_module_threaded(uri, src, ifaces))
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|h| h.join().unwrap())
+                .collect()
+        });
+
+        // Sequential: deep-copy interfaces into shared bump, drop module bumps
+        for output in level_outputs {
+            if let Some((ref name, ref iface)) = output.interface {
+                let copied = nash_can::deep_copy_interface(&shared_bump, iface);
+                let name: &str = shared_bump.alloc_str(name);
+                interfaces.insert(name, copied);
+            }
+            all_warnings.extend(output.warnings);
+            results.insert(output.uri, output.result);
         }
     }
 
@@ -95,13 +113,12 @@ pub async fn build(db: Arc<Mutex<Database>>, graph: &DepGraph) -> BuildResult {
         .values()
         .filter(|r| matches!(r, ModuleResult::Success { .. }))
         .count();
-    let failed = total - success;
 
     BuildResult {
         modules: results,
         total,
         success,
-        failed,
+        failed: total - success,
         warnings: all_warnings,
     }
 }
@@ -134,61 +151,99 @@ async fn fetch_sources(
     results
 }
 
-/// Compile a single module: parse, canonicalize, extract interface.
-fn compile_module<'a>(
-    _uri: &Url,
+/// Parse + canonicalize a single module in a per-module arena.
+///
+/// The interface is transmuted to `'static` so it can escape the block
+/// where the arena is borrowed. The arena is kept alive as `_bump` in
+/// the returned `CompileOutput`.
+fn compile_module_threaded(
+    uri: &Url,
     source: &Result<String, String>,
-    shared_bump: &'a Bump,
-    interfaces: &mut BTreeMap<&'a str, nash_can::Interface<'a>>,
-    warnings: &mut Vec<String>,
-) -> ModuleResult {
+    interfaces: &BTreeMap<&str, nash_can::Interface<'_>>,
+) -> CompileOutput {
     let source = match source {
         Ok(s) => s,
         Err(e) => {
-            return ModuleResult::Failed { message: e.clone() };
-        }
-    };
-
-    // Allocate source into shared bump so it outlives the parse
-    let src: &str = shared_bump.alloc_str(source);
-    let mut parser = nash_parse::Parser::new(shared_bump, src.as_bytes());
-
-    let module = match parser.module() {
-        Ok(m) => m,
-        Err(e) => {
-            return ModuleResult::Failed {
-                message: format!("{:?}", e),
+            return CompileOutput {
+                uri: uri.clone(),
+                result: ModuleResult::Failed { message: e.clone() },
+                interface: None,
+                warnings: vec![],
+                _bump: Bump::new(),
             };
         }
     };
 
-    // Build canonicalization context with interfaces from already-compiled modules
-    let context = nash_can::Context {
-        package: None,
-        interfaces: if interfaces.is_empty() {
-            None
-        } else {
-            Some(&*shared_bump.alloc(interfaces.clone()))
-        },
+    let bump = Bump::new();
+
+    // Inner block limits borrow scope of `bump`. After the block, only
+    // the transmuted `Interface<'static>` survives, and `bump` is free
+    // to move into `CompileOutput._bump`.
+    let (result, interface, warnings) = {
+        let src: &str = bump.alloc_str(source);
+        let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
+
+        match parser.module() {
+            Err(e) => (
+                ModuleResult::Failed {
+                    message: format!("{:?}", e),
+                },
+                None,
+                vec![],
+            ),
+            Ok(module) => {
+                let context = nash_can::Context {
+                    package: None,
+                    interfaces: if interfaces.is_empty() {
+                        None
+                    } else {
+                        Some(&*bump.alloc(interfaces.clone()))
+                    },
+                };
+
+                match nash_can::canonicalize(&bump, context, &module) {
+                    Ok(can_result) => {
+                        let warnings: Vec<String> = can_result
+                            .warnings
+                            .iter()
+                            .map(|w| format!("{:?}", w))
+                            .collect();
+                        let interface = nash_can::from_module(&bump, &can_result.module);
+                        let module_name = can_result.module.name.name.to_string();
+                        let decl_count = count_decls(can_result.module.decls);
+
+                        // SAFETY: `interface` borrows from `bump`. We transmute the
+                        // lifetime to `'static` so the value can escape this block.
+                        // The bump is kept alive as `_bump` in CompileOutput, so all
+                        // pointers inside the interface remain valid until the output
+                        // is consumed and dropped.
+                        let interface: nash_can::Interface<'static> =
+                            unsafe { std::mem::transmute(interface) };
+
+                        (
+                            ModuleResult::Success { decl_count },
+                            Some((module_name, interface)),
+                            warnings,
+                        )
+                    }
+                    Err(errors) => (
+                        ModuleResult::Failed {
+                            message: format!("{:?}", errors),
+                        },
+                        None,
+                        vec![],
+                    ),
+                }
+            }
+        }
     };
 
-    match nash_can::canonicalize(shared_bump, context, &module) {
-        Ok(can_result) => {
-            for w in &can_result.warnings {
-                warnings.push(format!("{:?}", w));
-            }
-
-            // Extract interface and store it for downstream modules
-            let interface = nash_can::from_module(shared_bump, &can_result.module);
-            let module_name: &str = shared_bump.alloc_str(can_result.module.name.name);
-            interfaces.insert(module_name, interface);
-
-            let decl_count = count_decls(can_result.module.decls);
-            ModuleResult::Success { decl_count }
-        }
-        Err(errors) => ModuleResult::Failed {
-            message: format!("{:?}", errors),
-        },
+    CompileOutput {
+        uri: uri.clone(),
+        result,
+        interface,
+        warnings,
+        _bump: bump,
     }
 }
 
