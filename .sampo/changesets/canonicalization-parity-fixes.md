@@ -20,4 +20,4 @@ nash-can:
 
 nash-driver:
 
-- `build` now fetches sources asynchronously and runs all CPU-bound compilation inside `spawn_blocking`, compiling each level on a bounded pool of scoped worker threads instead of one OS thread per module and no longer stalling tokio executor workers.
+- `build` now fetches sources asynchronously and runs all CPU-bound compilation inside `spawn_blocking`, compiling modules on a bounded pool of scoped worker threads instead of one OS thread per module and no longer stalling tokio executor workers.
