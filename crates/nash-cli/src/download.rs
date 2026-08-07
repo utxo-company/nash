@@ -19,7 +19,7 @@ pub async fn download_version(version: &str, dest_dir: &std::path::Path) -> Resu
         .into_diagnostic()?;
 
     let ext = if cfg!(windows) { "zip" } else { "tar.xz" };
-    let asset_name = format!("nash-{target}.{ext}");
+    let asset_name = format!("nash-cli-{target}.{ext}");
 
     let asset = release
         .assets

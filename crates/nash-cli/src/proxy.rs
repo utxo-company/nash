@@ -1,6 +1,42 @@
 use std::path::PathBuf;
 
-use miette::{IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, miette};
+
+/// Set on the child when the proxy execs a cached binary, so the child knows
+/// it was already proxied and must not proxy again. Without this, a cached
+/// binary whose version doesn't match its folder name would exec itself
+/// forever, silently.
+const PROXY_ENV_VAR: &str = "NASH_PROXY_VERSION";
+
+/// Check whether a parent `nash` process already proxied to this one.
+///
+/// Returns `true` if so, meaning [`maybe_proxy`] must be skipped. Errors if
+/// this binary's version doesn't match the version the parent resolved from
+/// `nash.jsonc` — that means the cached binary is not what its folder name
+/// claims.
+///
+/// Must be called before the tokio runtime starts: it mutates the process
+/// environment, which is only sound while the process is single-threaded.
+pub fn proxy_guard() -> Result<bool> {
+    let Ok(expected) = std::env::var(PROXY_ENV_VAR) else {
+        return Ok(false);
+    };
+
+    // SAFETY: called before the tokio runtime exists, so the process is
+    // still single-threaded.
+    unsafe { std::env::remove_var(PROXY_ENV_VAR) };
+
+    if expected != crate::VERSION {
+        return Err(miette!(
+            "The cached binary for nash {expected} reports version {}.\n\
+             Delete {} and try again.",
+            crate::VERSION,
+            cached_binary_dir(&expected).display()
+        ));
+    }
+
+    Ok(true)
+}
 
 /// Walk up from cwd looking for `nash.jsonc`. If the project requires a different
 /// compiler version, exec the correct binary (downloading it first if needed).
@@ -23,11 +59,11 @@ pub async fn maybe_proxy() -> Result<()> {
     let binary = cached_binary_path(required);
 
     if binary.exists() {
-        exec_cached_binary(&binary);
+        exec_cached_binary(&binary, required);
     }
 
     crate::download::download_version(required, &cache_dir).await?;
-    exec_cached_binary(&binary);
+    exec_cached_binary(&binary, required);
 }
 
 /// Search for `nash.jsonc` by walking up from `start`.
@@ -65,13 +101,19 @@ fn cached_binary_path(version: &str) -> PathBuf {
 }
 
 /// Replace this process with the cached binary, forwarding all args.
-fn exec_cached_binary(binary: &std::path::Path) -> ! {
+///
+/// `version` is passed via [`PROXY_ENV_VAR`] so the child knows it was
+/// proxied and refuses to proxy again.
+fn exec_cached_binary(binary: &std::path::Path, version: &str) -> ! {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        let err = std::process::Command::new(binary).args(&args).exec();
+        let err = std::process::Command::new(binary)
+            .args(&args)
+            .env(PROXY_ENV_VAR, version)
+            .exec();
         eprintln!("Failed to exec cached nash binary: {err}");
         std::process::exit(1);
     }
@@ -80,6 +122,7 @@ fn exec_cached_binary(binary: &std::path::Path) -> ! {
     {
         let status = std::process::Command::new(binary)
             .args(&args)
+            .env(PROXY_ENV_VAR, version)
             .status()
             .unwrap_or_else(|e| {
                 eprintln!("Failed to run cached nash binary: {e}");
