@@ -1,6 +1,6 @@
 ---
 source: crates/nash-can/src/module.rs
-description: "Code:\n\nmodule Main exposing ((|>))\n\ninfix left 6 (|>) = apR\n"
+description: "Code:\n\nmodule Main exposing ((|>))\n\ninfix left 6 (|>) = apR\n\napR x f = f x\n"
 ---
 Interface {
     home: ModuleName {
@@ -13,6 +13,26 @@ Interface {
     binops: [
         InterfaceBinop {
             symbol: "|>",
+            annotation: Annotation {
+                free_vars: [
+                    "a",
+                ],
+                typ: Located {
+                    region: Region {
+                        start: Position {
+                            line: 0,
+                            column: 0,
+                        },
+                        end: Position {
+                            line: 0,
+                            column: 0,
+                        },
+                    },
+                    value: Var(
+                        "a",
+                    ),
+                },
+            },
             associativity: Left,
             precedence: Precedence(
                 6,

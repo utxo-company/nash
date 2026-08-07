@@ -279,7 +279,7 @@ enum DefinitionState<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::expression::assert_expression_snapshot;
+    use crate::expression::{assert_expression_snapshot, assert_indented_expression_snapshot};
 
     #[test]
     fn let_simple() {
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn let_multiline() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             let
                 x = 1
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn let_multiple_defs() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             let
                 x = 1
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn let_with_function() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             let
                 f x = x
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn let_with_type_annotation() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             let
                 f : Int -> Int
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn let_destructure() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             let
                 (a, b) = pair
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn let_nested() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             let
                 x =

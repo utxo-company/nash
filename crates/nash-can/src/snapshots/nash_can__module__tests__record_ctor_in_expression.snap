@@ -189,12 +189,12 @@ Module {
                                                     Located {
                                                         region: Region {
                                                             start: Position {
-                                                                line: 0,
-                                                                column: 0,
+                                                                line: 3,
+                                                                column: 23,
                                                             },
                                                             end: Position {
-                                                                line: 0,
-                                                                column: 0,
+                                                                line: 3,
+                                                                column: 48,
                                                             },
                                                         },
                                                         value: Record {

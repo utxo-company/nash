@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bumpalo::Bump;
 use nash_ast::{
@@ -10,7 +10,7 @@ use nash_source::Type as SourceType;
 
 use crate::Error;
 use crate::accumulate;
-use crate::environment::{self, Env, Info, dups};
+use crate::environment::{self, Env, Info};
 use crate::error::BadArityContext;
 
 /// Canonicalize a source type and wrap it in an Annotation with free type variables.
@@ -69,34 +69,30 @@ fn canonicalize_type_value<'a>(
             CanType::Lambda { from, to }
         }
         SourceType::Var(name) => CanType::Var(name),
-        SourceType::Type { name, args, .. } => {
-            canonicalize_named_type(bump, env, region, name, args)?
+        SourceType::Type {
+            region: name_region,
+            name,
+            args,
+        } => {
+            let info = find_type(bump, env, *name_region, name)?;
+            canonicalize_env_type(bump, env, region, name, args, info)?
         }
         SourceType::TypeQual {
+            region: name_region,
             module: type_module,
             name,
             args,
-            ..
-        } => canonicalize_qualified_named_type(bump, env, region, type_module, name, args)?,
+        } => {
+            let info = find_type_qual(bump, env, *name_region, type_module, name)?;
+            canonicalize_env_type(bump, env, region, name, args, info)?
+        }
         SourceType::Record { fields, ext } => {
-            dups::detect(
-                fields.iter().map(|f| (f.field.value, f.field.region)),
-                |name, first, second| Error::DuplicateField {
-                    name,
-                    first,
-                    second,
-                },
-            )?;
+            let field_dict = check_fields(fields)?;
             let can_fields = accumulate::try_all_alloc(
                 bump,
-                fields.iter().copied().enumerate().map(|(index, field)| {
-                    canonicalize_field_type(
-                        bump,
-                        env,
-                        index.try_into().expect("record field index exceeds u16"),
-                        field,
-                    )
-                }),
+                field_dict
+                    .into_iter()
+                    .map(|(_, (index, field))| canonicalize_field_type(bump, env, index, field)),
             )?;
             CanType::Record {
                 fields: can_fields,
@@ -126,49 +122,86 @@ fn canonicalize_type_value<'a>(
     })
 }
 
-fn canonicalize_named_type<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    region: Region,
-    name: &'a str,
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<CanType<'a>, Vec<Error<'a>>> {
-    if let Some(info) = env.types.get(name) {
-        return match info {
-            Info::Specific(_, typ) => canonicalize_env_type(bump, env, region, name, args, *typ),
-            Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousType {
-                region,
-                prefix: None,
-                name,
-                first_module: *first,
-                other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
-            }]),
-        };
+/// Mirrors Elm's `Dups.checkFields`: one `DuplicateField` per duplicated
+/// name, in name order, with the first two occurrences. On success the
+/// fields come back keyed (and therefore ordered) by name, each carrying
+/// its source-position index.
+fn check_fields<'a, 'f>(
+    fields: &'f [&'a nash_source::FieldType<'a>],
+) -> Result<BTreeMap<&'a str, (u16, &'f nash_source::FieldType<'a>)>, Vec<Error<'a>>> {
+    let mut occurrences: BTreeMap<&'a str, Vec<(Region, u16, &nash_source::FieldType<'a>)>> =
+        BTreeMap::new();
+    for (index, field) in fields.iter().enumerate() {
+        let index: u16 = index.try_into().expect("record field index exceeds u16");
+        occurrences
+            .entry(field.field.value)
+            .or_default()
+            .push((field.field.region, index, field));
     }
 
-    Err(vec![Error::NotFoundType {
-        region,
-        prefix: None,
-        name,
-        suggestions: env.possible_type_names(bump),
-    }])
+    let mut result = BTreeMap::new();
+    let mut errors = Vec::new();
+    for (name, mut entries) in occurrences {
+        if entries.len() > 1 {
+            errors.push(Error::DuplicateField {
+                name,
+                first: entries[0].0,
+                second: entries[1].0,
+            });
+        } else {
+            let (_, index, field) = entries.remove(0);
+            result.insert(name, (index, field));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(result)
+    } else {
+        Err(errors)
+    }
 }
 
-fn canonicalize_qualified_named_type<'a>(
+/// Mirrors Elm's `Env.findType`. Lookup errors point at the type name
+/// itself, not the whole application.
+fn find_type<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
-    region: Region,
+    name_region: Region,
+    name: &'a str,
+) -> Result<environment::Type<'a>, Vec<Error<'a>>> {
+    match env.types.get(name) {
+        Some(Info::Specific(_, typ)) => Ok(*typ),
+        Some(Info::Ambiguous(first, others)) => Err(vec![Error::AmbiguousType {
+            region: name_region,
+            prefix: None,
+            name,
+            first_module: *first,
+            other_modules: bump.alloc_slice_fill_iter(others.iter().copied()),
+        }]),
+        None => Err(vec![Error::NotFoundType {
+            region: name_region,
+            prefix: None,
+            name,
+            suggestions: env.possible_type_names(bump),
+        }]),
+    }
+}
+
+/// Mirrors Elm's `Env.findTypeQual`.
+fn find_type_qual<'a>(
+    bump: &'a Bump,
+    env: &Env<'a>,
+    name_region: Region,
     prefix: &'a str,
     name: &'a str,
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<CanType<'a>, Vec<Error<'a>>> {
+) -> Result<environment::Type<'a>, Vec<Error<'a>>> {
     let info = env
         .q_types
         .get(prefix)
         .and_then(|m| m.get(name))
         .ok_or_else(|| {
             vec![Error::NotFoundType {
-                region,
+                region: name_region,
                 prefix: Some(prefix),
                 name,
                 suggestions: env.possible_type_names(bump),
@@ -176,9 +209,9 @@ fn canonicalize_qualified_named_type<'a>(
         })?;
 
     match info {
-        Info::Specific(_, typ) => canonicalize_env_type(bump, env, region, name, args, *typ),
+        Info::Specific(_, typ) => Ok(*typ),
         Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousType {
-            region,
+            region: name_region,
             prefix: Some(prefix),
             name,
             first_module: *first,
@@ -187,6 +220,8 @@ fn canonicalize_qualified_named_type<'a>(
     }
 }
 
+/// Mirrors Elm's `Type.canonicalizeType`: arguments are canonicalized
+/// first, and the arity check only runs once they all succeed.
 fn canonicalize_env_type<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
@@ -195,6 +230,7 @@ fn canonicalize_env_type<'a>(
     args: &'a [&'a Located<SourceType<'a>>],
     typ: environment::Type<'a>,
 ) -> Result<CanType<'a>, Vec<Error<'a>>> {
+    let can_args = canonicalize_type_arguments(bump, env, args)?;
     match typ {
         environment::Type::Alias {
             arity,
@@ -203,7 +239,16 @@ fn canonicalize_env_type<'a>(
             typ: alias_typ,
         } => {
             check_arity(region, name, arity, args.len())?;
-            let arguments = canonicalize_env_alias_arguments(bump, env, parameters, args)?;
+            let arguments = bump.alloc_slice_fill_iter(
+                parameters
+                    .iter()
+                    .copied()
+                    .zip(can_args.iter().copied())
+                    .map(|(parameter, typ)| CanAliasArgument {
+                        name: parameter,
+                        typ,
+                    }),
+            );
             Ok(CanType::Alias {
                 reference: QualifiedName { home, name },
                 arguments,
@@ -212,34 +257,12 @@ fn canonicalize_env_type<'a>(
         }
         environment::Type::Union { arity, home } => {
             check_arity(region, name, arity, args.len())?;
-            let args = canonicalize_type_arguments(bump, env, args)?;
             Ok(CanType::Named {
                 reference: QualifiedName { home, name },
-                args,
+                args: can_args,
             })
         }
     }
-}
-
-fn canonicalize_env_alias_arguments<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    parameters: &'a [&'a str],
-    args: &'a [&'a Located<SourceType<'a>>],
-) -> Result<&'a [CanAliasArgument<'a>], Vec<Error<'a>>> {
-    accumulate::try_all_alloc(
-        bump,
-        parameters
-            .iter()
-            .copied()
-            .zip(args.iter().copied())
-            .map(|(parameter, arg)| {
-                Ok(CanAliasArgument {
-                    name: parameter,
-                    typ: canonicalize_type(bump, env, arg)?,
-                })
-            }),
-    )
 }
 
 fn check_arity<'a>(
@@ -316,17 +339,89 @@ pub fn collect_free_vars<'a>(typ: &CanType<'a>, vars: &mut BTreeSet<&'a str>) {
     }
 }
 
+/// Mirrors Elm's `Type.dealias`: fill a `Holey` alias body by substituting
+/// the alias arguments for its type variables. `Filled` bodies are already
+/// substituted.
+pub fn dealias<'a>(
+    bump: &'a Bump,
+    arguments: &'a [CanAliasArgument<'a>],
+    target: &CanAliasType<'a>,
+) -> &'a Located<CanType<'a>> {
+    match target {
+        CanAliasType::Filled(typ) => typ,
+        CanAliasType::Open(typ) => {
+            let table: BTreeMap<&'a str, &'a Located<CanType<'a>>> =
+                arguments.iter().map(|arg| (arg.name, arg.typ)).collect();
+            dealias_help(bump, &table, typ)
+        }
+    }
+}
+
+fn dealias_help<'a>(
+    bump: &'a Bump,
+    table: &BTreeMap<&'a str, &'a Located<CanType<'a>>>,
+    typ: &'a Located<CanType<'a>>,
+) -> &'a Located<CanType<'a>> {
+    let substituted = match &typ.value {
+        CanType::Var(name) => return table.get(name).copied().unwrap_or(typ),
+        CanType::Unit => return typ,
+        CanType::Lambda { from, to } => CanType::Lambda {
+            from: dealias_help(bump, table, from),
+            to: dealias_help(bump, table, to),
+        },
+        CanType::Named { reference, args } => CanType::Named {
+            reference: *reference,
+            args: bump.alloc_slice_fill_iter(args.iter().map(|arg| dealias_help(bump, table, arg))),
+        },
+        // NOTE: like Elm's `dealiasHelp`, the record extension variable is
+        // not substituted.
+        CanType::Record { fields, ext } => CanType::Record {
+            fields: bump.alloc_slice_fill_iter(fields.iter().map(|f| CanFieldType {
+                index: f.index,
+                field: f.field,
+                typ: dealias_help(bump, table, f.typ),
+            })),
+            ext: *ext,
+        },
+        // Like Elm, only the alias arguments are substituted; the target
+        // body is left alone (it closes over the argument names).
+        CanType::Alias {
+            reference,
+            arguments,
+            target,
+        } => CanType::Alias {
+            reference: *reference,
+            arguments: bump.alloc_slice_fill_iter(arguments.iter().map(|arg| CanAliasArgument {
+                name: arg.name,
+                typ: dealias_help(bump, table, arg.typ),
+            })),
+            target: match target {
+                CanAliasType::Open(t) => CanAliasType::Open(t),
+                CanAliasType::Filled(t) => CanAliasType::Filled(t),
+            },
+        },
+        CanType::Tuple {
+            first,
+            second,
+            rest,
+        } => CanType::Tuple {
+            first: dealias_help(bump, table, first),
+            second: dealias_help(bump, table, second),
+            rest: bump.alloc_slice_fill_iter(rest.iter().map(|r| dealias_help(bump, table, r))),
+        },
+    };
+    bump.alloc(Located::at(typ.region, substituted))
+}
+
 /// Mirrors Elm's `Type.iteratedDealias`.
-pub fn iterated_dealias<'a>(typ: &'a Located<CanType<'a>>) -> &'a Located<CanType<'a>> {
+pub fn iterated_dealias<'a>(
+    bump: &'a Bump,
+    typ: &'a Located<CanType<'a>>,
+) -> &'a Located<CanType<'a>> {
     match &typ.value {
         CanType::Alias {
-            target: CanAliasType::Open(inner),
-            ..
-        }
-        | CanType::Alias {
-            target: CanAliasType::Filled(inner),
-            ..
-        } => iterated_dealias(inner),
+            arguments, target, ..
+        } => iterated_dealias(bump, dealias(bump, arguments, target)),
         _ => typ,
     }
 }
@@ -519,5 +614,69 @@ mod tests {
     #[test]
     fn type_union_reference() {
         assert_type_snapshot!("List a", env_with_list_and_int);
+    }
+
+    #[test]
+    fn record_fields_sorted_by_name() {
+        assert_type_snapshot!("{ z : Int, a : Int }", env_with_int);
+    }
+
+    #[test]
+    fn bad_args_reported_before_arity() {
+        assert_type_error_snapshot!("Maybe Bogus Other", env_with_maybe_alias);
+    }
+
+    #[test]
+    fn iterated_dealias_substitutes_arguments() {
+        let bump = Bump::new();
+        let home = ModuleName {
+            package: None,
+            name: "Main",
+        };
+        // type alias Transform a = a -> a, applied to Int
+        let var_a = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
+        let body = bump.alloc(Located::at(
+            Region::zero(),
+            CanType::Lambda {
+                from: var_a,
+                to: var_a,
+            },
+        ));
+        let int = bump.alloc(Located::at(
+            Region::zero(),
+            CanType::Named {
+                reference: QualifiedName { home, name: "Int" },
+                args: &[],
+            },
+        ));
+        let arguments = bump.alloc_slice_fill_iter([CanAliasArgument {
+            name: "a",
+            typ: &*int,
+        }]);
+        let aliased = bump.alloc(Located::at(
+            Region::zero(),
+            CanType::Alias {
+                reference: QualifiedName {
+                    home,
+                    name: "Transform",
+                },
+                arguments,
+                target: CanAliasType::Open(body),
+            },
+        ));
+        let dealiased = iterated_dealias(&bump, aliased);
+        match &dealiased.value {
+            CanType::Lambda { from, to } => {
+                assert!(matches!(
+                    &from.value,
+                    CanType::Named { reference, .. } if reference.name == "Int"
+                ));
+                assert!(matches!(
+                    &to.value,
+                    CanType::Named { reference, .. } if reference.name == "Int"
+                ));
+            }
+            other => panic!("expected substituted lambda, got {other:?}"),
+        }
     }
 }

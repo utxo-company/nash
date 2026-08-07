@@ -9,21 +9,21 @@ description: "Code:\n\nmodule Main exposing (..)\n\ntype alias Bad a a = a\n"
         first: Region {
             start: Position {
                 line: 3,
-                column: 16,
-            },
-            end: Position {
-                line: 3,
-                column: 17,
-            },
-        },
-        second: Region {
-            start: Position {
-                line: 3,
                 column: 18,
             },
             end: Position {
                 line: 3,
                 column: 19,
+            },
+        },
+        second: Region {
+            start: Position {
+                line: 3,
+                column: 16,
+            },
+            end: Position {
+                line: 3,
+                column: 17,
             },
         },
     },

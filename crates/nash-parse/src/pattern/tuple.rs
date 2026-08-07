@@ -117,7 +117,9 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{assert_pattern_error_snapshot, assert_pattern_snapshot};
+    use super::super::{
+        assert_indented_pattern_snapshot, assert_pattern_error_snapshot, assert_pattern_snapshot,
+    };
 
     #[test]
     fn unit() {
@@ -151,7 +153,7 @@ mod tests {
 
     #[test]
     fn multiline() {
-        assert_pattern_snapshot!(
+        assert_indented_pattern_snapshot!(
             "(
                 a,
                 b,

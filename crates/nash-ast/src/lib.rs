@@ -119,26 +119,34 @@ pub enum CtorOpts {
 pub enum Expr<'a> {
     VarLocal(&'a str),
     VarTopLevel(QualifiedName<'a>),
-    VarForeign(QualifiedName<'a>),
+    /// Mirrors Elm's `Can.VarForeign home name annotation`. The annotation
+    /// comes from the defining module's interface, which is only produced
+    /// after that module has been type-solved.
+    VarForeign {
+        reference: QualifiedName<'a>,
+        annotation: &'a Annotation<'a>,
+    },
     VarConstructor {
         options: CtorOpts,
         reference: ConstructorName<'a>,
         index: u16,
         annotation: &'a Annotation<'a>,
     },
+    /// Mirrors Elm's `Can.VarOperator op home name annotation`.
     VarOperator {
         symbol: &'a str,
         reference: QualifiedName<'a>,
-        annotation: Option<&'a Annotation<'a>>,
+        annotation: &'a Annotation<'a>,
     },
     Str(&'a str),
     Int(i128),
     List(&'a [&'a Located<Expr<'a>>]),
     Negate(&'a Located<Expr<'a>>),
+    /// Mirrors Elm's `Can.Binop op home name annotation left right`.
     Binop {
         symbol: &'a str,
         reference: QualifiedName<'a>,
-        annotation: Option<&'a Annotation<'a>>,
+        annotation: &'a Annotation<'a>,
         left: &'a Located<Expr<'a>>,
         right: &'a Located<Expr<'a>>,
     },

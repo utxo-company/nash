@@ -6,18 +6,44 @@ description: "Code:\n\nmodule Main exposing (..)\n\ntype alias A = B\n\ntype ali
     RecursiveAlias {
         region: Region {
             start: Position {
-                line: 5,
+                line: 3,
                 column: 12,
             },
             end: Position {
-                line: 5,
+                line: 3,
                 column: 13,
             },
         },
-        name: "B",
+        name: "A",
         args: [],
+        typ: Located {
+            region: Region {
+                start: Position {
+                    line: 3,
+                    column: 16,
+                },
+                end: Position {
+                    line: 3,
+                    column: 17,
+                },
+            },
+            value: Type {
+                region: Region {
+                    start: Position {
+                        line: 3,
+                        column: 16,
+                    },
+                    end: Position {
+                        line: 3,
+                        column: 17,
+                    },
+                },
+                name: "B",
+                args: [],
+            },
+        },
         others: [
-            "A",
+            "B",
         ],
     },
 ]

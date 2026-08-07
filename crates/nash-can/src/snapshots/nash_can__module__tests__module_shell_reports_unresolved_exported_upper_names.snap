@@ -16,5 +16,6 @@ description: "Code:\n\nmodule Main exposing (Missing)\n"
         },
         kind: BadType,
         name: "Missing",
+        suggestions: [],
     },
 ]

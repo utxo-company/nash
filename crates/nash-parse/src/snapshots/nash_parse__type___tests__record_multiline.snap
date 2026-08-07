@@ -1,16 +1,16 @@
 ---
 source: crates/nash-parse/src/type_.rs
-description: "Code:\n\n{\n    name : String,\n    age : Int,\n    active : Bool\n}"
+description: "Code (indented inside a declaration):\n\n    {\n        name : String,\n        age : Int,\n        active : Bool\n    }\n"
 ---
 Located {
     region: Region {
         start: Position {
             line: 1,
-            column: 1,
+            column: 5,
         },
         end: Position {
             line: 5,
-            column: 2,
+            column: 6,
         },
     },
     value: Record {
@@ -20,11 +20,11 @@ Located {
                     region: Region {
                         start: Position {
                             line: 2,
-                            column: 5,
+                            column: 9,
                         },
                         end: Position {
                             line: 2,
-                            column: 9,
+                            column: 13,
                         },
                     },
                     value: "name",
@@ -33,22 +33,22 @@ Located {
                     region: Region {
                         start: Position {
                             line: 2,
-                            column: 12,
+                            column: 16,
                         },
                         end: Position {
                             line: 2,
-                            column: 18,
+                            column: 22,
                         },
                     },
                     value: Type {
                         region: Region {
                             start: Position {
                                 line: 2,
-                                column: 12,
+                                column: 16,
                             },
                             end: Position {
                                 line: 2,
-                                column: 18,
+                                column: 22,
                             },
                         },
                         name: "String",
@@ -61,11 +61,11 @@ Located {
                     region: Region {
                         start: Position {
                             line: 3,
-                            column: 5,
+                            column: 9,
                         },
                         end: Position {
                             line: 3,
-                            column: 8,
+                            column: 12,
                         },
                     },
                     value: "age",
@@ -74,22 +74,22 @@ Located {
                     region: Region {
                         start: Position {
                             line: 3,
-                            column: 11,
+                            column: 15,
                         },
                         end: Position {
                             line: 3,
-                            column: 14,
+                            column: 18,
                         },
                     },
                     value: Type {
                         region: Region {
                             start: Position {
                                 line: 3,
-                                column: 11,
+                                column: 15,
                             },
                             end: Position {
                                 line: 3,
-                                column: 14,
+                                column: 18,
                             },
                         },
                         name: "Int",
@@ -102,11 +102,11 @@ Located {
                     region: Region {
                         start: Position {
                             line: 4,
-                            column: 5,
+                            column: 9,
                         },
                         end: Position {
                             line: 4,
-                            column: 11,
+                            column: 15,
                         },
                     },
                     value: "active",
@@ -115,22 +115,22 @@ Located {
                     region: Region {
                         start: Position {
                             line: 4,
-                            column: 14,
+                            column: 18,
                         },
                         end: Position {
                             line: 4,
-                            column: 18,
+                            column: 22,
                         },
                     },
                     value: Type {
                         region: Region {
                             start: Position {
                                 line: 4,
-                                column: 14,
+                                column: 18,
                             },
                             end: Position {
                                 line: 4,
-                                column: 18,
+                                column: 22,
                             },
                         },
                         name: "Bool",

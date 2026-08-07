@@ -16,6 +16,32 @@ description: "Code:\n\nmodule Main exposing (..)\n\ntype alias Loop = Loop\n"
         },
         name: "Loop",
         args: [],
+        typ: Located {
+            region: Region {
+                start: Position {
+                    line: 3,
+                    column: 19,
+                },
+                end: Position {
+                    line: 3,
+                    column: 23,
+                },
+            },
+            value: Type {
+                region: Region {
+                    start: Position {
+                        line: 3,
+                        column: 19,
+                    },
+                    end: Position {
+                        line: 3,
+                        column: 23,
+                    },
+                },
+                name: "Loop",
+                args: [],
+            },
+        },
         others: [],
     },
 ]

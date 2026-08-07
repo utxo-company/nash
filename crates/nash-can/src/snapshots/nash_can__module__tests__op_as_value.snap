@@ -67,7 +67,26 @@ Module {
                         },
                         name: "add",
                     },
-                    annotation: None,
+                    annotation: Annotation {
+                        free_vars: [
+                            "a",
+                        ],
+                        typ: Located {
+                            region: Region {
+                                start: Position {
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                            value: Var(
+                                "a",
+                            ),
+                        },
+                    },
                 },
             },
         },

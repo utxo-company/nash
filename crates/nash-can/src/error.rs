@@ -1,5 +1,6 @@
 use nash_ast::ModuleName;
 use nash_region::{Located, Region};
+use nash_source::Type as SourceType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BadArityContext {
@@ -31,7 +32,7 @@ pub struct PossibleNames<'a> {
     pub qualified: &'a [(&'a str, &'a [&'a str])],
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Error<'a> {
     MissingModuleHeader,
     NotFoundType {
@@ -62,6 +63,8 @@ pub enum Error<'a> {
         region: Region,
         kind: VarKind,
         name: &'a str,
+        /// Names that could have been meant, like Elm's suggestion lists.
+        suggestions: &'a [&'a str],
     },
     ExportOpenAlias {
         region: Region,
@@ -87,6 +90,15 @@ pub enum Error<'a> {
         first: Region,
         second: Region,
     },
+    /// An `infix` declaration's function is not a top-level value of the
+    /// module. Elm never validates this (infix is kernel-only there, and
+    /// its interface extraction crashes on the missing annotation); Nash
+    /// allows user-defined operators, so it must be a real error.
+    BinopFunctionNotFound {
+        region: Region,
+        op: &'a str,
+        function: &'a str,
+    },
     DuplicateUnionArg {
         type_name: &'a str,
         arg_name: &'a str,
@@ -103,6 +115,8 @@ pub enum Error<'a> {
         region: Region,
         name: &'a str,
         args: &'a [&'a str],
+        /// The alias's source type, used to suggest a `type` replacement.
+        typ: &'a Located<SourceType<'a>>,
         others: &'a [&'a str],
     },
     TypeVarsUnboundInUnion {
@@ -202,6 +216,10 @@ pub enum Error<'a> {
     AnnotationTooShort {
         region: Region,
         name: &'a str,
+        /// How many arguments the annotation accounts for.
+        index: usize,
+        /// How many definition arguments have no corresponding type.
+        leftovers: usize,
     },
 
     // --- Import validation errors ---

@@ -354,6 +354,32 @@ macro_rules! assert_pattern_error_snapshot {
     }};
 }
 
+/// Snapshot test macro for multiline patterns, laid out as they would
+/// appear indented inside a definition (see `test_support::indent_fragment`).
+#[cfg(test)]
+macro_rules! assert_indented_pattern_snapshot {
+    ($code:expr) => {{
+        let bump = bumpalo::Bump::new();
+        let fragment = indoc::indoc!($code);
+        let indented = $crate::test_support::indent_fragment(fragment);
+        let src = bump.alloc_str(&indented);
+        let mut parser = $crate::Parser::new(&bump, src.as_bytes());
+        parser
+            .chomp(|_, _, _| "space error")
+            .expect("expected leading indent");
+        let (result, _end) = parser.pattern_expr().expect("expected successful parse");
+
+        insta::with_settings!({
+            description => format!("Code (indented inside a def):\n\n{}", indented),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use assert_indented_pattern_snapshot;
 #[cfg(test)]
 pub(crate) use assert_pattern_error_snapshot;
 #[cfg(test)]

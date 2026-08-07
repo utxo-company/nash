@@ -400,6 +400,22 @@ mod tests {
     }
 
     #[test]
+    fn module_with_union_then_value() {
+        // A definition at column 1 must end the union's variant list, not
+        // be swallowed as extra constructor arguments.
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type Wrap a
+                = Wrap a
+
+            f w = w
+        "#
+        );
+    }
+
+    #[test]
     fn module_with_alias() {
         assert_module_snapshot!(
             r#"

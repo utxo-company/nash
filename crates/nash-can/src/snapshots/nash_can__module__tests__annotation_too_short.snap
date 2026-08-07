@@ -15,5 +15,7 @@ description: "Code:\n\nmodule Main exposing (..)\n\nf : a\nf x = x\n"
             },
         },
         name: "f",
+        index: 0,
+        leftovers: 1,
     },
 ]

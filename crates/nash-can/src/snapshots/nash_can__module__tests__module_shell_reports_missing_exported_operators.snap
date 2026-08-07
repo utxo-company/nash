@@ -16,5 +16,6 @@ description: "Code:\n\nmodule Main exposing ((|>))\n"
         },
         kind: BadOp,
         name: "|>",
+        suggestions: [],
     },
 ]

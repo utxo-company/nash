@@ -33,6 +33,24 @@ pub fn accumulate3<'a, A, B, C>(
     }
 }
 
+/// Elm's `f <$> a <*> b <*> c <*> d`.
+pub fn accumulate4<'a, A, B, C, D>(
+    a: Result<A, Vec<Error<'a>>>,
+    b: Result<B, Vec<Error<'a>>>,
+    c: Result<C, Vec<Error<'a>>>,
+    d: Result<D, Vec<Error<'a>>>,
+) -> Result<(A, B, C, D), Vec<Error<'a>>> {
+    let mut errors = Vec::new();
+    let a = collect_result(a, &mut errors);
+    let b = collect_result(b, &mut errors);
+    let c = collect_result(c, &mut errors);
+    let d = collect_result(d, &mut errors);
+    match (a, b, c, d) {
+        (Some(a), Some(b), Some(c), Some(d)) => Ok((a, b, c, d)),
+        _ => Err(errors),
+    }
+}
+
 fn collect_result<'a, T>(
     result: Result<T, Vec<Error<'a>>>,
     errors: &mut Vec<Error<'a>>,

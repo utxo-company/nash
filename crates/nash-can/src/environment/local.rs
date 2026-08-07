@@ -3,7 +3,7 @@ use nash_ast::{Alias as CanAlias, Type as CanType, Union as CanUnion};
 use nash_region::Located;
 use nash_source::{Alias as SourceAlias, Infix, Union as SourceUnion, Value as SourceValue};
 
-use super::{Binop, Ctor, Env, Info, Type, Var, dups};
+use super::{Ctor, Env, Type, Var, dups};
 use crate::Error;
 
 pub fn add_union_types<'a>(
@@ -35,7 +35,9 @@ pub fn add_union_types<'a>(
     Ok(())
 }
 
-pub fn add_alias_type<'a>(bump: &'a Bump, env: &mut Env<'a>, can_alias: &CanAlias<'a>) {
+/// Add an alias's type entry to the env. The record constructor (if any)
+/// is added later by `add_ctors`, matching Elm's `addTypes`/`addCtors` split.
+pub fn add_alias_type<'a>(env: &mut Env<'a>, can_alias: &CanAlias<'a>) {
     let typ = Type::Alias {
         arity: can_alias.parameters.len(),
         home: env.home,
@@ -43,32 +45,22 @@ pub fn add_alias_type<'a>(bump: &'a Bump, env: &mut Env<'a>, can_alias: &CanAlia
         typ: can_alias.typ,
     };
     env.insert_local_type(can_alias.name.value, typ);
-
-    if let CanType::Record { fields, ext: None } = &can_alias.typ.value {
-        let field_names = bump.alloc_slice_fill_iter(fields.iter().map(|f| f.field));
-        let field_types = bump.alloc_slice_fill_iter(fields.iter().map(|f| f.typ));
-        let info = Ctor::RecordCtor {
-            home: env.home,
-            alias_name: can_alias.name.value,
-            type_vars: can_alias.parameters,
-            field_names,
-            field_types,
-        };
-        env.insert_local_ctor(can_alias.name.value, info);
-    }
 }
 
+/// Mirrors Elm's `addCtors`: detect duplicate constructors (union ctors
+/// first, then record-alias ctors), each at its own region, then add them
+/// to the env. `source_unions` supplies the constructor name regions that
+/// the canonical AST does not keep.
 pub fn add_ctors<'a>(
+    bump: &'a Bump,
     env: &mut Env<'a>,
+    source_unions: &'a [&'a Located<SourceUnion<'a>>],
     unions: &'a [&'a Located<CanUnion<'a>>],
     aliases: &'a [&'a Located<CanAlias<'a>>],
 ) -> Result<(), Vec<Error<'a>>> {
-    let union_ctors = unions.iter().flat_map(|u| {
-        u.value
-            .ctors
-            .iter()
-            .map(move |c| (c.name, u.value.name.region))
-    });
+    let union_ctors = source_unions
+        .iter()
+        .flat_map(|u| u.value.ctors.iter().map(|c| (c.name.value, c.name.region)));
     let alias_ctors = aliases
         .iter()
         .filter(|a| matches!(&a.value.typ.value, CanType::Record { ext: None, .. }))
@@ -105,6 +97,21 @@ pub fn add_ctors<'a>(
             env.insert_local_ctor(ctor.name, info);
         }
     }
+
+    for alias in aliases {
+        if let CanType::Record { fields, ext: None } = &alias.value.typ.value {
+            let info = super::make_record_ctor(
+                bump,
+                env.home,
+                alias.value.name.value,
+                alias.value.parameters,
+                alias.value.typ,
+                fields,
+            );
+            env.insert_local_ctor(alias.value.name.value, info);
+        }
+    }
+
     Ok(())
 }
 
@@ -132,8 +139,16 @@ pub fn add_vars<'a>(
     Ok(())
 }
 
-pub fn add_binops<'a>(
-    env: &mut Env<'a>,
+/// Validate local `infix` declarations.
+///
+/// Like Elm, local operators do NOT enter the env (only imported binops
+/// are in scope; the defining module calls the underlying function).
+/// Elm never needed these checks because `infix` is kernel-only there;
+/// Nash allows user-defined operators, so duplicates and dangling
+/// function references must be real errors instead of silent last-wins
+/// and an interface-extraction crash.
+pub fn check_binops<'a>(
+    env: &Env<'a>,
     binops: &'a [&'a Located<Infix<'a>>],
 ) -> Result<(), Vec<Error<'a>>> {
     dups::detect(
@@ -145,16 +160,19 @@ pub fn add_binops<'a>(
         },
     )?;
 
+    let mut errors = Vec::new();
     for binop in binops {
-        let info = Binop {
-            symbol: binop.value.op,
-            home: env.home,
-            function: binop.value.name,
-            associativity: binop.value.associativity,
-            precedence: binop.value.precedence,
-        };
-        env.binops
-            .insert(binop.value.op, Info::Specific(env.home, info));
+        if !matches!(env.vars.get(binop.value.name), Some(Var::TopLevel(_))) {
+            errors.push(Error::BinopFunctionNotFound {
+                region: binop.region,
+                op: binop.value.op,
+                function: binop.value.name,
+            });
+        }
     }
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }

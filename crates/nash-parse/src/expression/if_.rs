@@ -151,7 +151,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::expression::assert_expression_snapshot;
+    use crate::expression::{assert_expression_snapshot, assert_indented_expression_snapshot};
 
     #[test]
     fn if_simple() {
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn if_multiline() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             if condition then
                 trueBranch
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn if_else_if_multiline() {
-        assert_expression_snapshot!(
+        assert_indented_expression_snapshot!(
             r#"
             if a then
                 1

@@ -28,8 +28,10 @@ pub type Qualified<'a, T> = BTreeMap<&'a str, BTreeMap<&'a str, Info<'a, T>>>;
 pub enum Var<'a> {
     Local(Region),
     TopLevel(Region),
-    /// Imported from another module. Annotation deferred.
-    Foreign(ModuleName<'a>),
+    /// Imported from another module, like Elm's `Foreign home annotation`.
+    /// The annotation comes from the defining module's (post-solve)
+    /// interface.
+    Foreign(ModuleName<'a>, &'a nash_ast::Annotation<'a>),
     /// Ambiguous import: same name imported from multiple modules.
     Foreigns(ModuleName<'a>, Vec<ModuleName<'a>>),
 }
@@ -74,21 +76,79 @@ pub enum Ctor<'a> {
     },
     /// Record alias ctor (e.g., `Point` from `type alias Point = { x : Int, y : Int }`).
     /// Elm creates these automatically for non-extensible record aliases.
+    /// Like Elm's `Env.RecordCtor home vars tipe`, the complete curried
+    /// function type is built up front.
     RecordCtor {
         home: ModuleName<'a>,
         alias_name: &'a str,
         type_vars: &'a [&'a str],
-        field_names: &'a [&'a str],
-        field_types: &'a [&'a Located<CanType<'a>>],
+        typ: &'a Located<CanType<'a>>,
     },
 }
 
-/// A binary operator in scope.
+/// Build the curried constructor type for a record alias, mirroring Elm's
+/// `toRecordCtor`: `field1 -> field2 -> ... -> Alias args (Filled record)`,
+/// with fields in source order (`fieldsToList` sorts by index).
+pub fn make_record_ctor<'a>(
+    bump: &'a Bump,
+    home: ModuleName<'a>,
+    alias_name: &'a str,
+    parameters: &'a [&'a str],
+    record_type: &'a Located<CanType<'a>>,
+    fields: &'a [nash_ast::FieldType<'a>],
+) -> Ctor<'a> {
+    let arguments =
+        bump.alloc_slice_fill_iter(parameters.iter().map(|var| nash_ast::AliasArgument {
+            name: var,
+            typ: bump.alloc(Located::at(Region::zero(), CanType::Var(var))),
+        }));
+    let result: &'a Located<CanType<'a>> = bump.alloc(Located::at(
+        Region::zero(),
+        CanType::Alias {
+            reference: nash_ast::QualifiedName {
+                home,
+                name: alias_name,
+            },
+            arguments,
+            target: nash_ast::AliasType::Filled(record_type),
+        },
+    ));
+
+    let mut fields_in_source_order: Vec<&nash_ast::FieldType<'a>> = fields.iter().collect();
+    fields_in_source_order.sort_by_key(|f| f.index);
+
+    let mut typ = result;
+    for field in fields_in_source_order.into_iter().rev() {
+        typ = bump.alloc(Located::at(
+            Region::zero(),
+            CanType::Lambda {
+                from: field.typ,
+                to: typ,
+            },
+        ));
+    }
+
+    Ctor::RecordCtor {
+        home,
+        alias_name,
+        type_vars: parameters,
+        typ,
+    }
+}
+
+/// A binary operator in scope. Mirrors Elm's
+/// `Env.Binop op home name annotation associativity precedence`.
+///
+/// Like Elm, only IMPORTED operators are in scope: the defining module's
+/// own `infix` declarations do not enter its env (their annotations only
+/// exist once that module has been solved), so a module calls the
+/// operator's underlying function directly, as Elm core modules do.
 #[derive(Clone, Copy, Debug)]
 pub struct Binop<'a> {
     pub symbol: &'a str,
     pub home: ModuleName<'a>,
     pub function: &'a str,
+    pub annotation: &'a nash_ast::Annotation<'a>,
     pub associativity: Associativity,
     pub precedence: Precedence,
 }
@@ -104,7 +164,9 @@ pub struct Env<'a> {
     pub types: Exposed<'a, Type<'a>>,
     pub ctors: Exposed<'a, Ctor<'a>>,
     pub binops: Exposed<'a, Binop<'a>>,
-    pub q_vars: Qualified<'a, ()>,
+    /// Qualified value lookups carry the imported value's annotation,
+    /// like Elm's `_q_vars :: Qualified Can.Annotation`.
+    pub q_vars: Qualified<'a, &'a nash_ast::Annotation<'a>>,
     pub q_types: Qualified<'a, Type<'a>>,
     pub q_ctors: Qualified<'a, Ctor<'a>>,
 }
@@ -287,11 +349,14 @@ pub fn merge_exposed<'a, T: Clone>(
             e.insert(Info::Specific(home, value));
         }
         Entry::Occupied(mut e) => match e.get() {
-            Info::Specific(existing, _) if existing.name != home.name => {
+            // Elm's `mergeInfo` compares the full canonical name (package
+            // and module) and keeps the FIRST value when they are equal.
+            Info::Specific(existing, _) if *existing != home => {
                 let first = *existing;
                 e.insert(Info::Ambiguous(first, vec![home]));
             }
-            Info::Ambiguous(_, others) if !others.iter().any(|h| h.name == home.name) => {
+            // Like `OneOrMore.more`, appends are unconditional.
+            Info::Ambiguous(..) => {
                 if let Info::Ambiguous(_, others) = e.get_mut() {
                     others.push(home);
                 }

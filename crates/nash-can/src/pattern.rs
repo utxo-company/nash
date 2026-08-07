@@ -12,27 +12,58 @@ use crate::error::{BadArityContext, DuplicatePatternContext};
 pub type Bindings<'a> = BTreeMap<&'a str, Region>;
 
 /// Canonicalize a pattern, detect duplicate bindings, return (pattern, bindings).
-/// Mirrors Elm's `Pattern.verify`.
+/// Mirrors Elm's `Pattern.verify` wrapped around a single pattern.
 pub fn verify<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
     context: DuplicatePatternContext<'a>,
     pattern: &'a Located<SourcePattern<'a>>,
 ) -> Result<(&'a Located<CanPattern<'a>>, Bindings<'a>), Vec<Error<'a>>> {
-    let mut bound: Vec<(&'a str, Region)> = Vec::new();
-    let result = canonicalize(bump, env, pattern, &mut bound)?;
-    let bindings = dups::detect(bound.into_iter(), |name, first, second| {
-        Error::DuplicatePattern {
-            context,
-            name,
-            first,
-            second,
-        }
-    })?;
-    Ok((result, bindings))
+    let (patterns, bindings) = verify_all(bump, env, context, std::slice::from_ref(&pattern))?;
+    Ok((patterns[0], bindings))
 }
 
-fn canonicalize<'a>(
+/// Canonicalize several patterns inside ONE duplicate-detection scope,
+/// like Elm's `Pattern.verify ctx (traverse (Pattern.canonicalize env) args)`.
+/// This is what catches `\x x -> ...` and `f x x = ...` across arguments.
+pub fn verify_all<'a>(
+    bump: &'a Bump,
+    env: &Env<'a>,
+    context: DuplicatePatternContext<'a>,
+    patterns: &[&'a Located<SourcePattern<'a>>],
+) -> Result<(Vec<&'a Located<CanPattern<'a>>>, Bindings<'a>), Vec<Error<'a>>> {
+    let mut bound: Vec<(&'a str, Region)> = Vec::new();
+    let mut results = Vec::with_capacity(patterns.len());
+    let mut errors = Vec::new();
+    for pattern in patterns {
+        match canonicalize(bump, env, pattern, &mut bound) {
+            Ok(p) => results.push(p),
+            Err(errs) => errors.extend(errs),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    let bindings = detect_duplicates(context, bound)?;
+    Ok((results, bindings))
+}
+
+/// Run Elm's `Dups.detect (Error.DuplicatePattern context)` over collected
+/// bindings. Exposed so typed definitions can share one scope between
+/// `gather_typed_args` and the check.
+pub fn detect_duplicates<'a>(
+    context: DuplicatePatternContext<'a>,
+    bound: Vec<(&'a str, Region)>,
+) -> Result<Bindings<'a>, Vec<Error<'a>>> {
+    dups::detect(bound, |name, first, second| Error::DuplicatePattern {
+        context,
+        name,
+        first,
+        second,
+    })
+}
+
+pub fn canonicalize<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
     pattern: &'a Located<SourcePattern<'a>>,
@@ -73,14 +104,21 @@ fn canonicalize<'a>(
             second,
             rest,
         } => {
-            if rest.len() > 1 {
-                return Err(vec![Error::TupleLargerThanThree {
+            // Like Elm's `PTuple <$> a <*> b <*> canonicalizeTuple`, the
+            // element errors and the tuple-size error accumulate together.
+            let size_check: Result<(), Vec<Error<'a>>> = if rest.len() > 1 {
+                Err(vec![Error::TupleLargerThanThree {
                     region: pattern.region,
-                }]);
-            }
-            let first = canonicalize(bump, env, first, bindings)?;
-            let second = canonicalize(bump, env, second, bindings)?;
-            let rest = canonicalize_list(bump, env, rest, bindings)?;
+                }])
+            } else {
+                Ok(())
+            };
+            let (first, second, rest, ()) = crate::accumulate::accumulate4(
+                canonicalize(bump, env, first, bindings),
+                canonicalize(bump, env, second, bindings),
+                canonicalize_list(bump, env, rest, bindings),
+                size_check,
+            )?;
             CanPattern::Tuple {
                 first,
                 second,
@@ -88,15 +126,22 @@ fn canonicalize<'a>(
             }
         }
 
-        SourcePattern::Ctor { name, args, .. } => {
-            let ctor = env.find_ctor(bump, pattern.region, name)?;
+        SourcePattern::Ctor {
+            region: name_region,
+            name,
+            args,
+        } => {
+            let ctor = env.find_ctor(bump, *name_region, name)?;
             canonicalize_ctor_pattern(bump, env, pattern.region, name, args, &ctor, bindings)?
         }
 
         SourcePattern::CtorQual {
-            module, name, args, ..
+            region: name_region,
+            module,
+            name,
+            args,
         } => {
-            let ctor = env.find_ctor_qual(bump, pattern.region, module, name)?;
+            let ctor = env.find_ctor_qual(bump, *name_region, module, name)?;
             canonicalize_ctor_pattern(bump, env, pattern.region, name, args, &ctor, bindings)?
         }
 
@@ -106,8 +151,10 @@ fn canonicalize<'a>(
         }
 
         SourcePattern::Cons { head, tail } => {
-            let head = canonicalize(bump, env, head, bindings)?;
-            let tail = canonicalize(bump, env, tail, bindings)?;
+            let (head, tail) = crate::accumulate::accumulate2(
+                canonicalize(bump, env, head, bindings),
+                canonicalize(bump, env, tail, bindings),
+            )?;
             CanPattern::Cons { head, tail }
         }
 
@@ -184,10 +231,23 @@ fn canonicalize_ctor_pattern<'a>(
             }))
         }
 
-        environment::Ctor::Bool { union, .. } => Ok(CanPattern::Bool {
-            union,
-            value: name == "True",
-        }),
+        // `True`/`False` are nullary; like Elm, the arity check runs before
+        // the Bool decision, so `True x` is a `BadArity` error.
+        environment::Ctor::Bool { union, .. } => {
+            if !args.is_empty() {
+                return Err(vec![Error::BadArity {
+                    region,
+                    context: BadArityContext::PatternArity,
+                    name,
+                    expected: 0,
+                    actual: args.len(),
+                }]);
+            }
+            Ok(CanPattern::Bool {
+                union,
+                value: name == "True",
+            })
+        }
 
         environment::Ctor::RecordCtor { .. } => {
             Err(vec![Error::PatternHasRecordCtor { region, name }])
@@ -306,13 +366,31 @@ mod tests {
         };
         let mut env = empty_env(bump);
 
-        let field_typ = bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
-        let ctor = Ctor::RecordCtor {
-            home,
-            alias_name: "Point",
-            type_vars: &[],
-            field_names: bump.alloc_slice_fill_iter(["x", "y"]),
-            field_types: bump.alloc_slice_fill_iter([&*field_typ, &*field_typ]),
+        let field_typ: &Located<CanType> =
+            bump.alloc(Located::at(Region::zero(), CanType::Var("a")));
+        let record_type: &Located<CanType> = bump.alloc(Located::at(
+            Region::zero(),
+            CanType::Record {
+                fields: bump.alloc_slice_fill_iter([
+                    nash_ast::FieldType {
+                        index: 0,
+                        field: "x",
+                        typ: field_typ,
+                    },
+                    nash_ast::FieldType {
+                        index: 1,
+                        field: "y",
+                        typ: field_typ,
+                    },
+                ]),
+                ext: None,
+            },
+        ));
+        let ctor = match &record_type.value {
+            CanType::Record { fields, .. } => {
+                crate::environment::make_record_ctor(bump, home, "Point", &[], record_type, fields)
+            }
+            _ => unreachable!(),
         };
         env.ctors.insert("Point", Info::Specific(home, ctor));
 
@@ -511,5 +589,30 @@ mod tests {
     #[test]
     fn duplicate_vars() {
         assert_pattern_error_snapshot!("( x, x )", empty_env);
+    }
+
+    #[test]
+    fn bool_pattern_with_args_is_bad_arity() {
+        assert_pattern_error_snapshot!("True x", env_with_bool);
+    }
+
+    #[test]
+    fn duplicate_across_sibling_patterns() {
+        let bump = Bump::new();
+        let env = empty_env(&bump);
+        let first = parse_pattern(&bump, "x");
+        let second = parse_pattern(&bump, "x");
+        let result = verify_all(
+            &bump,
+            &env,
+            DuplicatePatternContext::LambdaArgs,
+            &[first, second],
+        );
+        insta::with_settings!({
+            description => "verify_all over `x` and `x`",
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result.unwrap_err());
+        });
     }
 }

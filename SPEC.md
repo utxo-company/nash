@@ -99,10 +99,13 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
   - `FileSystemSource` (native, `#[cfg(not(wasm32))]`)
   - `InMemorySource` (universal, for LSP unsaved buffers)
   - `OverlaySource` (composition: InMemory overlays FileSystem)
-- **Build model:** Header-only crawl → dependency graph → compile in order
+- **Build model:** Elm's pipeline per module — parse → canonicalize →
+  constrain → solve → interface. Interfaces only exist for solved
+  modules, so cross-module compilation waits for `nash-constrain` /
+  `nash-solve`; until then modules parse and canonicalize independently.
+  Sources may be fetched and parsed in parallel, but type checking is
+  dependency-ordered.
 - **Caching:** Interface-only (always regenerate UPLC), bincode serialization
-- **Persistence:** Interfaces persist to `.nash/interfaces/`, graph rebuilt each run
-- **Parallelism:** tokio tasks + JoinSet for parallel compilation by dependency level
 - **Invalidation:** Reverse dependency tracking for LSP
 - **Arenas:** Per-module bumpalo arenas
 
@@ -111,7 +114,7 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
 - `database.rs`: Compilation database with source caching and dependency tracking
 - `project.rs`: Project loading from `nash.jsonc`, workspace member discovery
 - `graph.rs`: Dependency graph construction with topological sort and cycle detection
-- `compile.rs`: Parallel compilation orchestration with `tokio::task::JoinSet`
+- `compile.rs`: Compilation orchestration (async source fetch, CPU-bound work off the executor)
 - `interface.rs`: Interface serialization with bincode for incremental builds
 - `error.rs`: Driver error types with miette diagnostics
 
@@ -434,6 +437,16 @@ AST types: `crates/nash-source/src/lib.rs`
 
 ### Canonicalization
 - [x] Module header canonicalization (`crates/nash-can/src/module.rs`)
+- [x] Import environment with privacy (`crates/nash-can/src/environment/foreign.rs`)
+- [x] Local env: types, ctors, vars, binops, dup detection (`crates/nash-can/src/environment/local.rs`)
+- [x] Union/alias canonicalization with free-var checks and alias cycles (`crates/nash-can/src/module.rs`)
+- [x] Pattern canonicalization (`crates/nash-can/src/pattern.rs`)
+- [x] Type/annotation canonicalization with alias dealiasing (`crates/nash-can/src/types.rs`)
+- [x] Expression canonicalization with operator desugaring (`crates/nash-can/src/expression.rs`)
+- [x] Two-phase SCC cycle detection, exact `Data.Graph.stronglyConnComp` port (`crates/nash-can/src/scc.rs`)
+- [x] Export canonicalization and interface extraction (`crates/nash-can/src/interface.rs`)
+- [ ] Prelude / default imports (deferred to prelude design)
+- [ ] Foreign value/binop annotations (deferred to type inference)
 
 ---
 

@@ -1,12 +1,12 @@
 ---
 source: crates/nash-parse/src/expression/let_.rs
-description: "Code:\n\nlet\n    x = 1\n    y = 2\nin\n    x\n"
+description: "Code (indented inside a def):\n\n    let\n        x = 1\n        y = 2\n    in\n        x\n"
 ---
 Located {
     region: Region {
         start: Position {
             line: 1,
-            column: 1,
+            column: 5,
         },
         end: Position {
             line: 6,
@@ -19,11 +19,11 @@ Located {
                 region: Region {
                     start: Position {
                         line: 2,
-                        column: 5,
+                        column: 9,
                     },
                     end: Position {
                         line: 3,
-                        column: 5,
+                        column: 9,
                     },
                 },
                 value: Define {
@@ -31,11 +31,11 @@ Located {
                         region: Region {
                             start: Position {
                                 line: 2,
-                                column: 5,
+                                column: 9,
                             },
                             end: Position {
                                 line: 2,
-                                column: 6,
+                                column: 10,
                             },
                         },
                         value: "x",
@@ -45,11 +45,11 @@ Located {
                         region: Region {
                             start: Position {
                                 line: 2,
-                                column: 9,
+                                column: 13,
                             },
                             end: Position {
                                 line: 2,
-                                column: 10,
+                                column: 14,
                             },
                         },
                         value: Int(
@@ -63,11 +63,11 @@ Located {
                 region: Region {
                     start: Position {
                         line: 3,
-                        column: 5,
+                        column: 9,
                     },
                     end: Position {
                         line: 4,
-                        column: 1,
+                        column: 5,
                     },
                 },
                 value: Define {
@@ -75,11 +75,11 @@ Located {
                         region: Region {
                             start: Position {
                                 line: 3,
-                                column: 5,
+                                column: 9,
                             },
                             end: Position {
                                 line: 3,
-                                column: 6,
+                                column: 10,
                             },
                         },
                         value: "y",
@@ -89,11 +89,11 @@ Located {
                         region: Region {
                             start: Position {
                                 line: 3,
-                                column: 9,
+                                column: 13,
                             },
                             end: Position {
                                 line: 3,
-                                column: 10,
+                                column: 14,
                             },
                         },
                         value: Int(
@@ -108,11 +108,11 @@ Located {
             region: Region {
                 start: Position {
                     line: 5,
-                    column: 5,
+                    column: 9,
                 },
                 end: Position {
                     line: 5,
-                    column: 6,
+                    column: 10,
                 },
             },
             value: Var {

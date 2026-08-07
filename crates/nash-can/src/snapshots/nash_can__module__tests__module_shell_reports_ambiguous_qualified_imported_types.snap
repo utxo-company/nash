@@ -11,7 +11,7 @@ description: "Code:\n\nmodule Main exposing (Wrapped)\n\nimport Json.Decode as D
             },
             end: Position {
                 line: 7,
-                column: 44,
+                column: 40,
             },
         },
         prefix: Some(

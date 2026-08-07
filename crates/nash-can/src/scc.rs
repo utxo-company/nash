@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 pub struct Node<'a, T> {
     pub key: &'a str,
     pub value: T,
@@ -11,124 +9,117 @@ pub enum Scc<T> {
     Cyclic(Vec<T>),
 }
 
-/// Iterative Tarjan's SCC. Mirrors Haskell's `Data.Graph.stronglyConnComp`.
+/// Exact port of Haskell's `Data.Graph.stronglyConnComp` so component
+/// order and member order match Elm's canonicalizer:
 ///
-/// Takes ownership of nodes, runs Tarjan on the key/deps graph,
-/// then moves each node's `.value` into the SCC result.
+/// - `graphFromEdges` numbers vertices in key-sorted order; unknown deps
+///   are dropped, duplicate edges and self-edges are kept.
+/// - `scc g = dfs g (reverse (postOrd (transposeG g)))` (Kosaraju): a DFS
+///   forest over the transposed graph gives a reversed postorder, then a
+///   DFS over the original graph in that order yields one tree per SCC,
+///   with members in tree preorder.
+/// - A singleton component is `Acyclic` unless it has a self-edge.
 pub fn strongly_connected_components<T>(nodes: Vec<Node<'_, T>>) -> Vec<Scc<T>> {
     let n = nodes.len();
-    let mut index_of: BTreeMap<&str, usize> = BTreeMap::new();
-    for (i, node) in nodes.iter().enumerate() {
-        index_of.insert(node.key, i);
-    }
 
+    // graphFromEdges sorts nodes by key; vertex v = sorted position.
+    let mut sorted: Vec<usize> = (0..n).collect();
+    sorted.sort_by_key(|&i| nodes[i].key);
+
+    let key_vertex =
+        |key: &str| -> Option<usize> { sorted.binary_search_by(|&i| nodes[i].key.cmp(key)).ok() };
+
+    // Adjacency in vertex space, preserving each node's dep order and
+    // duplicates (`mapMaybe key_vertex ks`).
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut has_self_edge = vec![false; n];
-    for (i, node) in nodes.iter().enumerate() {
-        for dep in &node.deps {
-            if let Some(&j) = index_of.get(dep) {
-                if i == j {
-                    has_self_edge[i] = true;
-                } else {
-                    adj[i].push(j);
-                }
+    for v in 0..n {
+        for dep in &nodes[sorted[v]].deps {
+            if let Some(w) = key_vertex(dep) {
+                adj[v].push(w);
             }
         }
     }
 
-    tarjan(n, &adj, &has_self_edge, nodes)
-}
+    // transposeG via buildG/accumArray (flip (:)): edges enumerated in
+    // ascending vertex order are *prepended*, so each incoming list ends
+    // up in descending enumeration order.
+    let mut transposed: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (v, targets) in adj.iter().enumerate() {
+        for &w in targets {
+            transposed[w].push(v);
+        }
+    }
+    for list in &mut transposed {
+        list.reverse();
+    }
 
-fn tarjan<T>(
-    n: usize,
-    adj: &[Vec<usize>],
-    has_self_edge: &[bool],
-    nodes: Vec<Node<'_, T>>,
-) -> Vec<Scc<T>> {
-    let mut order: Vec<usize> = vec![0; n];
-    let mut lowlink: Vec<usize> = vec![0; n];
-    let mut on_stack: Vec<bool> = vec![false; n];
-    let mut visited: Vec<bool> = vec![false; n];
-    let mut stack: Vec<usize> = Vec::new();
-    let mut counter: usize = 0;
-    let mut result_sccs: Vec<Vec<usize>> = Vec::new();
-
-    let mut work: Vec<(usize, usize, bool)> = Vec::new();
-
-    for start in 0..n {
-        if visited[start] {
+    // reverse (postOrd (transposeG g)): postorder of the DFS forest over
+    // the transpose, visiting roots 0..n-1, then reversed.
+    let mut post_order: Vec<usize> = Vec::with_capacity(n);
+    let mut visited = vec![false; n];
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for root in 0..n {
+        if visited[root] {
             continue;
         }
-
-        work.push((start, 0, true));
-
-        while let Some((v, ni, is_init)) = work.last_mut() {
-            let v = *v;
-
-            if *is_init {
-                order[v] = counter;
-                lowlink[v] = counter;
-                counter += 1;
-                visited[v] = true;
-                on_stack[v] = true;
-                stack.push(v);
-                *is_init = false;
-            }
-
-            if *ni < adj[v].len() {
-                let w = adj[v][*ni];
-                *ni += 1;
+        visited[root] = true;
+        stack.push((root, 0));
+        while let Some(&mut (v, ref mut next)) = stack.last_mut() {
+            if let Some(&w) = transposed[v].get(*next) {
+                *next += 1;
                 if !visited[w] {
-                    work.push((w, 0, true));
-                } else if on_stack[w] {
-                    lowlink[v] = lowlink[v].min(order[w]);
+                    visited[w] = true;
+                    stack.push((w, 0));
                 }
             } else {
-                if lowlink[v] == order[v] {
-                    let mut component = Vec::new();
-                    loop {
-                        let w = stack
-                            .pop()
-                            .expect("SCC stack contains root by Tarjan invariant");
-                        on_stack[w] = false;
-                        component.push(w);
-                        if w == v {
-                            break;
-                        }
-                    }
-                    result_sccs.push(component);
-                }
-
-                let finished_lowlink = lowlink[v];
-                work.pop();
-                if let Some((parent, _, _)) = work.last() {
-                    lowlink[*parent] = lowlink[*parent].min(finished_lowlink);
-                }
+                post_order.push(v);
+                stack.pop();
             }
         }
     }
 
-    // Move values out of nodes so we can return them in SCC order.
-    let mut values: Vec<Option<T>> = nodes.into_iter().map(|n| Some(n.value)).collect();
+    // dfs g (reverse post_order): each tree is one SCC, members in preorder.
+    let mut components: Vec<Vec<usize>> = Vec::new();
+    let mut visited = vec![false; n];
+    for &root in post_order.iter().rev() {
+        if visited[root] {
+            continue;
+        }
+        let mut component = Vec::new();
+        visited[root] = true;
+        stack.push((root, 0));
+        component.push(root);
+        while let Some(&mut (v, ref mut next)) = stack.last_mut() {
+            if let Some(&w) = adj[v].get(*next) {
+                *next += 1;
+                if !visited[w] {
+                    visited[w] = true;
+                    component.push(w);
+                    stack.push((w, 0));
+                }
+            } else {
+                stack.pop();
+            }
+        }
+        components.push(component);
+    }
 
-    // Tarjan emits SCCs with leaves (no dependencies) first,
-    // which is exactly the processing order we want (deps before dependents).
-    result_sccs
+    let has_self_edge: Vec<bool> = (0..n).map(|v| adj[v].contains(&v)).collect();
+
+    let mut values: Vec<Option<T>> = nodes.into_iter().map(|node| Some(node.value)).collect();
+    let mut take = |v: usize| {
+        values[sorted[v]]
+            .take()
+            .expect("each vertex appears in exactly one SCC")
+    };
+
+    components
         .into_iter()
         .map(|component| {
             if component.len() == 1 && !has_self_edge[component[0]] {
-                Scc::Acyclic(
-                    values[component[0]]
-                        .take()
-                        .expect("each node consumed exactly once"),
-                )
+                Scc::Acyclic(take(component[0]))
             } else {
-                Scc::Cyclic(
-                    component
-                        .into_iter()
-                        .map(|i| values[i].take().expect("each node consumed exactly once"))
-                        .collect(),
-                )
+                Scc::Cyclic(component.into_iter().map(&mut take).collect())
             }
         })
         .collect()

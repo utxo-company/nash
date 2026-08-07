@@ -1,16 +1,16 @@
 ---
 source: crates/nash-parse/src/expression/if_.rs
-description: "Code:\n\nif a then\n    1\nelse if b then\n    2\nelse\n    3\n"
+description: "Code (indented inside a def):\n\n    if a then\n        1\n    else if b then\n        2\n    else\n        3\n"
 ---
 Located {
     region: Region {
         start: Position {
             line: 1,
-            column: 1,
+            column: 5,
         },
         end: Position {
             line: 6,
-            column: 6,
+            column: 10,
         },
     },
     value: If {
@@ -20,11 +20,11 @@ Located {
                     region: Region {
                         start: Position {
                             line: 1,
-                            column: 4,
+                            column: 8,
                         },
                         end: Position {
                             line: 1,
-                            column: 5,
+                            column: 9,
                         },
                     },
                     value: Var {
@@ -36,11 +36,11 @@ Located {
                     region: Region {
                         start: Position {
                             line: 2,
-                            column: 5,
+                            column: 9,
                         },
                         end: Position {
                             line: 2,
-                            column: 6,
+                            column: 10,
                         },
                     },
                     value: Int(
@@ -53,11 +53,11 @@ Located {
                     region: Region {
                         start: Position {
                             line: 3,
-                            column: 9,
+                            column: 13,
                         },
                         end: Position {
                             line: 3,
-                            column: 10,
+                            column: 14,
                         },
                     },
                     value: Var {
@@ -69,11 +69,11 @@ Located {
                     region: Region {
                         start: Position {
                             line: 4,
-                            column: 5,
+                            column: 9,
                         },
                         end: Position {
                             line: 4,
-                            column: 6,
+                            column: 10,
                         },
                     },
                     value: Int(
@@ -86,11 +86,11 @@ Located {
             region: Region {
                 start: Position {
                     line: 6,
-                    column: 5,
+                    column: 9,
                 },
                 end: Position {
                     line: 6,
-                    column: 6,
+                    column: 10,
                 },
             },
             value: Int(

@@ -170,12 +170,12 @@ Module {
                                                     Located {
                                                         region: Region {
                                                             start: Position {
-                                                                line: 0,
-                                                                column: 0,
+                                                                line: 3,
+                                                                column: 22,
                                                             },
                                                             end: Position {
-                                                                line: 0,
-                                                                column: 0,
+                                                                line: 3,
+                                                                column: 38,
                                                             },
                                                         },
                                                         value: Record {

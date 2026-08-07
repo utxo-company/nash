@@ -16,5 +16,6 @@ description: "Code:\n\nmodule Main exposing (main)\n"
         },
         kind: BadVar,
         name: "main",
+        suggestions: [],
     },
 ]

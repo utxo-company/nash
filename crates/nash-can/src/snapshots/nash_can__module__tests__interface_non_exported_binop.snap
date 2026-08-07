@@ -1,6 +1,6 @@
 ---
 source: crates/nash-can/src/module.rs
-description: "Code:\n\nmodule Main exposing (foo)\n\ninfix left 6 (|>) = apR\n\nfoo = 42\n"
+description: "Code:\n\nmodule Main exposing (foo)\n\ninfix left 6 (|>) = apR\n\napR x f = f x\n\nfoo = 42\n"
 ---
 Interface {
     home: ModuleName {
@@ -10,7 +10,26 @@ Interface {
     values: [
         InterfaceValue {
             name: "foo",
-            annotation: None,
+            annotation: Annotation {
+                free_vars: [
+                    "a",
+                ],
+                typ: Located {
+                    region: Region {
+                        start: Position {
+                            line: 0,
+                            column: 0,
+                        },
+                        end: Position {
+                            line: 0,
+                            column: 0,
+                        },
+                    },
+                    value: Var(
+                        "a",
+                    ),
+                },
+            },
         },
     ],
     aliases: [],

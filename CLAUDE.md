@@ -72,9 +72,12 @@ cargo insta test --unreferenced delete  # delete stale snapshots
 
 The test macros use `indoc!` which strips leading indentation, so:
 - **Simple one-liners** stay simple: `assert_expression_snapshot!("if x then y else z");`
-- **Multiline tests** use raw strings with normal indentation:
+- **Multiline tests** use the `assert_indented_*_snapshot!` macro variants,
+  which lay the fragment out as it would appear indented inside a
+  definition (a token at column 1 always starts a new top-level
+  declaration, so bare multiline fragments are not valid input):
   ```rust
-  assert_expression_snapshot!(r#"
+  assert_indented_expression_snapshot!(r#"
       if condition then
           trueBranch
       else

@@ -13,6 +13,21 @@ Module {
                 region: Region {
                     start: Position {
                         line: 1,
+                        column: 29,
+                    },
+                    end: Position {
+                        line: 1,
+                        column: 34,
+                    },
+                },
+                value: UnionOpen(
+                    "Maybe",
+                ),
+            },
+            Located {
+                region: Region {
+                    start: Position {
+                        line: 1,
                         column: 23,
                     },
                     end: Position {
@@ -22,21 +37,6 @@ Module {
                 },
                 value: Alias(
                     "Pair",
-                ),
-            },
-            Located {
-                region: Region {
-                    start: Position {
-                        line: 1,
-                        column: 29,
-                    },
-                    end: Position {
-                        line: 1,
-                        column: 37,
-                    },
-                },
-                value: UnionOpen(
-                    "Maybe",
                 ),
             },
         ],

@@ -146,7 +146,9 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::expression::{assert_expr_error_snapshot, assert_expr_snapshot};
+    use crate::expression::{
+        assert_expr_error_snapshot, assert_expr_snapshot, assert_indented_expr_snapshot,
+    };
 
     #[test]
     fn empty() {
@@ -175,7 +177,7 @@ mod tests {
 
     #[test]
     fn multiline() {
-        assert_expr_snapshot!(
+        assert_indented_expr_snapshot!(
             "[
                 1,
                 2,
@@ -186,7 +188,7 @@ mod tests {
 
     #[test]
     fn with_comments() {
-        assert_expr_snapshot!(
+        assert_indented_expr_snapshot!(
             "[
                 1, -- first
                 2, -- second

@@ -1,6 +1,6 @@
 ---
 source: crates/nash-can/src/module.rs
-description: "Code:\n\nmodule Main exposing (..)\n\ninfix left 6 (|>) = apR\n\ninfix left 6 (|>) = apR2\n"
+description: "Code:\n\nmodule Main exposing (..)\n\ninfix left 6 (|>) = apR\n\ninfix left 6 (|>) = apR2\n\napR x f = f x\n\napR2 x f = f x\n"
 ---
 [
     DuplicateBinop {
@@ -21,7 +21,7 @@ description: "Code:\n\nmodule Main exposing (..)\n\ninfix left 6 (|>) = apR\n\ni
                 column: 1,
             },
             end: Position {
-                line: 6,
+                line: 7,
                 column: 1,
             },
         },

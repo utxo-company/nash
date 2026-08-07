@@ -74,7 +74,7 @@ pub fn verify_bindings<'a>(
     }
 
     for (&name, &region) in bindings {
-        if !name.starts_with('_') && !body_free_locals.contains_key(name) {
+        if !body_free_locals.contains_key(name) {
             warnings.push(Warning::UnusedVariable {
                 region,
                 context,
@@ -138,7 +138,7 @@ pub fn canonicalize_expr<'a>(
                     home: binop.home,
                     name: binop.function,
                 },
-                annotation: None,
+                annotation: binop.annotation,
             }
         }
 
@@ -238,7 +238,10 @@ fn find_var<'a>(
                 name,
             }))
         }
-        Some(Var::Foreign(home)) => Ok(CanExpr::VarForeign(QualifiedName { home: *home, name })),
+        Some(Var::Foreign(home, annotation)) => Ok(CanExpr::VarForeign {
+            reference: QualifiedName { home: *home, name },
+            annotation,
+        }),
         Some(Var::Foreigns(first, others)) => Err(vec![Error::AmbiguousVar {
             region,
             prefix: None,
@@ -275,7 +278,10 @@ fn find_var_qual<'a>(
             }]
         })?;
     match info {
-        Info::Specific(home, ()) => Ok(CanExpr::VarForeign(QualifiedName { home: *home, name })),
+        Info::Specific(home, annotation) => Ok(CanExpr::VarForeign {
+            reference: QualifiedName { home: *home, name },
+            annotation,
+        }),
         Info::Ambiguous(first, others) => Err(vec![Error::AmbiguousVar {
             region,
             prefix: Some(prefix),
@@ -298,7 +304,11 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
             ..
         } => {
             // Build: a -> b -> ... -> TypeName a b
-            let free_vars: FreeVars<'a> = bump.alloc_slice_fill_iter(type_vars.iter().copied());
+            // Elm keeps free vars in a Map, so they come out name-sorted.
+            let mut sorted_vars: Vec<&'a str> = type_vars.to_vec();
+            sorted_vars.sort_unstable();
+            sorted_vars.dedup();
+            let free_vars: FreeVars<'a> = bump.alloc_slice_fill_iter(sorted_vars);
             let result_type: &Located<CanType> = bump.alloc(Located::at(
                 Region::zero(),
                 CanType::Named {
@@ -363,63 +373,15 @@ fn to_var_ctor<'a>(bump: &'a Bump, name: &'a str, ctor: &EnvCtor<'a>) -> CanExpr
             home,
             alias_name,
             type_vars,
-            field_names,
-            field_types,
+            typ,
         } => {
-            let free_vars_set: std::collections::BTreeSet<&str> = field_types
-                .iter()
-                .flat_map(|t| {
-                    let mut vars = std::collections::BTreeSet::new();
-                    types::collect_free_vars(&t.value, &mut vars);
-                    vars
-                })
-                .collect();
-            let free_vars: FreeVars<'a> = bump.alloc_slice_fill_iter(free_vars_set);
-
-            let record_type: &Located<CanType> = bump.alloc(Located::at(
-                Region::zero(),
-                CanType::Record {
-                    fields: bump.alloc_slice_fill_iter(
-                        field_names.iter().zip(field_types.iter()).enumerate().map(
-                            |(i, (fname, ftyp))| nash_ast::FieldType {
-                                index: i as u16,
-                                field: fname,
-                                typ: ftyp,
-                            },
-                        ),
-                    ),
-                    ext: None,
-                },
-            ));
-
-            // Wrap in Alias { target: Filled(record) } like Elm's toRecordCtor
-            let result_type: &Located<CanType> = bump.alloc(Located::at(
-                Region::zero(),
-                CanType::Alias {
-                    reference: QualifiedName {
-                        home: *home,
-                        name: alias_name,
-                    },
-                    arguments: bump.alloc_slice_fill_iter(type_vars.iter().map(|v| {
-                        nash_ast::AliasArgument {
-                            name: v,
-                            typ: bump.alloc(Located::at(Region::zero(), CanType::Var(v))),
-                        }
-                    })),
-                    target: nash_ast::AliasType::Filled(record_type),
-                },
-            ));
-
-            let mut typ: &Located<CanType> = result_type;
-            for field_type in field_types.iter().rev() {
-                typ = bump.alloc(Located::at(
-                    Region::zero(),
-                    CanType::Lambda {
-                        from: field_type,
-                        to: typ,
-                    },
-                ));
-            }
+            // Like Elm's `Env.RecordCtor home vars tipe`: the curried type
+            // was built when the ctor entered the env; the free vars are
+            // the alias's declared parameters (name-sorted, as a Map).
+            let mut sorted_vars: Vec<&'a str> = type_vars.to_vec();
+            sorted_vars.sort_unstable();
+            sorted_vars.dedup();
+            let free_vars: FreeVars<'a> = bump.alloc_slice_fill_iter(sorted_vars);
             let annotation = bump.alloc(Annotation { free_vars, typ });
 
             CanExpr::VarConstructor {
@@ -466,21 +428,10 @@ fn canonicalize_lambda<'a>(
     free_locals: &mut FreeLocals<'a>,
     warnings: &mut Vec<Warning<'a>>,
 ) -> Result<&'a Located<CanExpr<'a>>, Vec<Error<'a>>> {
-    let mut all_bindings = Bindings::new();
-    let mut can_params = Vec::with_capacity(parameters.len());
-    let mut errors = Vec::new();
-    for param in parameters {
-        match pattern::verify(bump, env, DuplicatePatternContext::LambdaArgs, param) {
-            Ok((p, b)) => {
-                can_params.push(p);
-                all_bindings.extend(b);
-            }
-            Err(errs) => errors.extend(errs),
-        }
-    }
-    if !errors.is_empty() {
-        return Err(errors);
-    }
+    // One duplicate-detection scope across ALL parameters, so `\x x -> x`
+    // is rejected like in Elm.
+    let (can_params, all_bindings) =
+        pattern::verify_all(bump, env, DuplicatePatternContext::LambdaArgs, parameters)?;
 
     let inner_env = env.add_locals(&all_bindings)?;
     let mut body_free_locals = FreeLocals::new();
@@ -585,6 +536,42 @@ fn canonicalize_if<'a>(
     })
 }
 
+/// Mirrors Elm's `Dups.checkFields`: one `DuplicateField` per duplicated
+/// name with its first two occurrences, in name order; on success the
+/// fields come back keyed (hence sorted) by name, matching Elm's canonical
+/// `Map Name ...` record representation.
+fn check_field_assigns<'a>(
+    fields: &[&'a FieldAssign<'a>],
+) -> Result<BTreeMap<&'a str, &'a FieldAssign<'a>>, Vec<Error<'a>>> {
+    let mut occurrences: BTreeMap<&'a str, Vec<&'a FieldAssign<'a>>> = BTreeMap::new();
+    for field in fields {
+        occurrences
+            .entry(field.field.value)
+            .or_default()
+            .push(field);
+    }
+
+    let mut result = BTreeMap::new();
+    let mut errors = Vec::new();
+    for (name, entries) in occurrences {
+        if entries.len() > 1 {
+            errors.push(Error::DuplicateField {
+                name,
+                first: entries[0].field.region,
+                second: entries[1].field.region,
+            });
+        } else {
+            result.insert(name, entries[0]);
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(result)
+    } else {
+        Err(errors)
+    }
+}
+
 fn canonicalize_record<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
@@ -592,15 +579,10 @@ fn canonicalize_record<'a>(
     free_locals: &mut FreeLocals<'a>,
     warnings: &mut Vec<Warning<'a>>,
 ) -> Result<CanExpr<'a>, Vec<Error<'a>>> {
-    let field_iter = fields.iter().map(|f| (f.field.value, f.field.region));
-    environment::dups::detect(field_iter, |name, first, second| Error::DuplicateField {
-        name,
-        first,
-        second,
-    })?;
-    let mut can_fields = Vec::with_capacity(fields.len());
+    let field_dict = check_field_assigns(fields)?;
+    let mut can_fields = Vec::with_capacity(field_dict.len());
     let mut errors = Vec::new();
-    for field in fields {
+    for (_, field) in field_dict {
         match canonicalize_expr(bump, env, field.value, free_locals, warnings) {
             Ok(value) => can_fields.push(CanFieldValue {
                 field: field.field,
@@ -623,30 +605,31 @@ fn canonicalize_update<'a>(
     free_locals: &mut FreeLocals<'a>,
     warnings: &mut Vec<Warning<'a>>,
 ) -> Result<CanExpr<'a>, Vec<Error<'a>>> {
-    let base_expr = find_var(bump, env, record.region, record.value, free_locals)?;
-    let base = bump.alloc(Located::at(record.region, base_expr));
-    let field_iter = fields.iter().map(|f| (f.field.value, f.field.region));
-    environment::dups::detect(field_iter, |name, first, second| Error::DuplicateField {
-        name,
-        first,
-        second,
-    })?;
-    let mut can_fields = Vec::with_capacity(fields.len());
-    let mut errors = Vec::new();
-    for field in fields {
-        match canonicalize_expr(bump, env, field.value, free_locals, warnings) {
-            Ok(value) => {
-                can_fields.push(CanFieldUpdate {
+    // Like Elm's `Can.Update name <$> findVar ... <*> makeCanFields`, the
+    // base-variable error accumulates with the field errors.
+    let base_result = find_var(bump, env, record.region, record.value, free_locals)
+        .map(|base_expr| &*bump.alloc(Located::at(record.region, base_expr)));
+
+    let fields_result = check_field_assigns(fields).and_then(|field_dict| {
+        let mut can_fields = Vec::with_capacity(field_dict.len());
+        let mut errors = Vec::new();
+        for (_, field) in field_dict {
+            match canonicalize_expr(bump, env, field.value, free_locals, warnings) {
+                Ok(value) => can_fields.push(CanFieldUpdate {
                     field: field.field,
                     value,
-                });
+                }),
+                Err(errs) => errors.extend(errs),
             }
-            Err(errs) => errors.extend(errs),
         }
-    }
-    if !errors.is_empty() {
-        return Err(errors);
-    }
+        if errors.is_empty() {
+            Ok(can_fields)
+        } else {
+            Err(errors)
+        }
+    });
+
+    let (base, can_fields) = crate::accumulate::accumulate2(base_result, fields_result)?;
     Ok(CanExpr::Update {
         record: record.value,
         base,
@@ -658,6 +641,7 @@ struct ResolvedOp<'a> {
     symbol: &'a str,
     home: ModuleName<'a>,
     function: &'a str,
+    annotation: &'a Annotation<'a>,
     associativity: nash_ast::Associativity,
     precedence: nash_ast::Precedence,
 }
@@ -684,6 +668,7 @@ fn canonicalize_binops<'a>(
                 symbol: binop.symbol,
                 home: binop.home,
                 function: binop.function,
+                annotation: binop.annotation,
                 associativity: binop.associativity,
                 precedence: binop.precedence,
             }),
@@ -766,7 +751,7 @@ fn build_tree_rec<'a>(
                 home: op.home,
                 name: op.function,
             },
-            annotation: None,
+            annotation: op.annotation,
             left,
             right,
         },
@@ -900,6 +885,8 @@ fn collect_def_names<'a>(def: &SourceDef<'a>, out: &mut Vec<(&'a str, Region)>) 
     }
 }
 
+/// Mirrors Elm's `addBindingsHelp`: every binder in the pattern, in
+/// traversal order, for duplicate detection across a `let` block.
 fn collect_pattern_names<'a>(
     pat: &nash_source::Pattern<'a>,
     region: Region,
@@ -927,11 +914,72 @@ fn collect_pattern_names<'a>(
                 collect_pattern_names(&r.value, r.region, out);
             }
         }
+        nash_source::Pattern::Ctor { args, .. } | nash_source::Pattern::CtorQual { args, .. } => {
+            for arg in *args {
+                collect_pattern_names(&arg.value, arg.region, out);
+            }
+        }
+        nash_source::Pattern::List(patterns) => {
+            for p in *patterns {
+                collect_pattern_names(&p.value, p.region, out);
+            }
+        }
         nash_source::Pattern::Cons { head, tail } => {
             collect_pattern_names(&head.value, head.region, out);
             collect_pattern_names(&tail.value, tail.region, out);
         }
-        _ => {}
+        nash_source::Pattern::Anything
+        | nash_source::Pattern::Unit
+        | nash_source::Pattern::Str(_)
+        | nash_source::Pattern::Int(_) => {}
+    }
+}
+
+/// Mirrors Elm's `getPatternNames`, including its accumulation order
+/// (names are PREPENDED as the pattern is traversed), because the list
+/// head feeds `Name.fromManyNames` for the destructure node key.
+fn get_pattern_names<'a>(
+    mut names: Vec<(&'a str, Region)>,
+    pat: &'a Located<nash_source::Pattern<'a>>,
+) -> Vec<(&'a str, Region)> {
+    match &pat.value {
+        nash_source::Pattern::Var(name) => {
+            names.insert(0, (name, pat.region));
+            names
+        }
+        nash_source::Pattern::Record(fields) => {
+            let mut out: Vec<(&'a str, Region)> =
+                fields.iter().map(|f| (f.value, f.region)).collect();
+            out.append(&mut names);
+            out
+        }
+        nash_source::Pattern::Alias { pattern, name } => {
+            names.insert(0, (name.value, name.region));
+            get_pattern_names(names, pattern)
+        }
+        nash_source::Pattern::Tuple {
+            first,
+            second,
+            rest,
+        } => {
+            let names = get_pattern_names(names, first);
+            let names = get_pattern_names(names, second);
+            rest.iter().fold(names, |acc, p| get_pattern_names(acc, p))
+        }
+        nash_source::Pattern::Ctor { args, .. } | nash_source::Pattern::CtorQual { args, .. } => {
+            args.iter().fold(names, |acc, p| get_pattern_names(acc, p))
+        }
+        nash_source::Pattern::List(patterns) => patterns
+            .iter()
+            .fold(names, |acc, p| get_pattern_names(acc, p)),
+        nash_source::Pattern::Cons { head, tail } => {
+            let names = get_pattern_names(names, head);
+            get_pattern_names(names, tail)
+        }
+        nash_source::Pattern::Anything
+        | nash_source::Pattern::Unit
+        | nash_source::Pattern::Str(_)
+        | nash_source::Pattern::Int(_) => names,
     }
 }
 
@@ -958,18 +1006,43 @@ fn canonicalize_let_def<'a>(
             body,
             annotation,
         } => {
-            let mut arg_bindings = Bindings::new();
-            let mut can_args = Vec::with_capacity(args.len());
-            for arg in *args {
-                let (can_pat, bindings) = pattern::verify(
+            // Mirrors Elm's `addDefNodes`: for typed defs the annotation is
+            // resolved and matched against the arguments BEFORE the body is
+            // canonicalized; either way one duplicate scope spans all args.
+            let (can_def_builder, arg_bindings): (DefBuilder<'a>, Bindings<'a>) = if let Some(ann) =
+                annotation
+            {
+                let annotation_val = types::to_annotation(bump, env, ann)?;
+                let mut bound: Vec<(&'a str, Region)> = Vec::new();
+                let (typed_args, result_type) =
+                    gather_typed_args(bump, env, name.value, args, annotation_val.typ, &mut bound)?;
+                let arg_bindings = pattern::detect_duplicates(
+                    DuplicatePatternContext::FuncArgs(name.value),
+                    bound,
+                )?;
+                (
+                    DefBuilder::Typed {
+                        free_vars: annotation_val.free_vars,
+                        args: bump.alloc_slice_fill_iter(typed_args),
+                        typ: result_type,
+                    },
+                    arg_bindings,
+                )
+            } else {
+                let (can_args, arg_bindings) = pattern::verify_all(
                     bump,
                     env,
                     DuplicatePatternContext::FuncArgs(name.value),
-                    arg,
+                    args,
                 )?;
-                can_args.push(can_pat);
-                arg_bindings.extend(bindings);
-            }
+                (
+                    DefBuilder::Untyped {
+                        args: bump.alloc_slice_fill_iter(can_args),
+                    },
+                    arg_bindings,
+                )
+            };
+
             let body_env = env.add_locals(&arg_bindings)?;
             let mut body_free_locals = FreeLocals::new();
             let can_body =
@@ -989,23 +1062,23 @@ fn canonicalize_let_def<'a>(
                 .collect();
 
             let has_args = !args.is_empty();
-            let can_def: &'a CanDef<'a> = if let Some(ann) = annotation {
-                let annotation_val = types::to_annotation(bump, env, ann)?;
-                let typed_args = gather_typed_args(bump, name.value, &can_args, annotation_val)?;
-                let result_type = peel_result_type(annotation_val, can_args.len());
-                bump.alloc(CanDef::TypedDef {
+            let can_def: &'a CanDef<'a> = match can_def_builder {
+                DefBuilder::Typed {
+                    free_vars,
+                    args,
+                    typ,
+                } => bump.alloc(CanDef::TypedDef {
                     name,
-                    free_vars: annotation_val.free_vars,
-                    args: typed_args,
+                    free_vars,
+                    args,
                     body: can_body,
-                    typ: result_type,
-                })
-            } else {
-                bump.alloc(CanDef::Def {
+                    typ,
+                }),
+                DefBuilder::Untyped { args } => bump.alloc(CanDef::Def {
                     name,
-                    args: bump.alloc_slice_fill_iter(can_args),
+                    args,
                     body: can_body,
-                })
+                }),
             };
 
             Ok((
@@ -1025,31 +1098,47 @@ fn canonicalize_let_def<'a>(
                 .copied()
                 .collect();
 
-            let mut names = Vec::new();
-            collect_pattern_names(&pattern.value, pattern.region, &mut names);
-            let synthetic = names.first().map(|(n, _)| *n).unwrap_or("_destruct");
+            // Elm keys the destructure node with `Name.fromManyNames`: the
+            // head of `getPatternNames` prefixed by "_M$", which cannot
+            // collide with a source-level name. Every bound name then gets
+            // an Edge node pointing at the destructure, so a self-reference
+            // like `let (a, b) = f a` forms a detectable cycle.
+            let names = get_pattern_names(Vec::new(), pattern);
+            let synthetic: &'a str = match names.first() {
+                Some((n, _)) => bump.alloc_str(&format!("_M${n}")),
+                None => "_M$",
+            };
 
             let mut result = vec![(synthetic, LetBinding::Destruct(can_pattern, can_body), deps)];
-            for (pname, _) in &names {
-                if *pname != synthetic {
-                    result.push((
-                        *pname,
-                        LetBinding::Edge(bump.alloc(Located::at(pattern.region, *pname))),
-                        vec![synthetic],
-                    ));
-                }
+            for (pname, pregion) in &names {
+                result.push((
+                    *pname,
+                    LetBinding::Edge(bump.alloc(Located::at(*pregion, *pname))),
+                    vec![synthetic],
+                ));
             }
             Ok((result, false, body_free_locals))
         }
     }
 }
 
+enum DefBuilder<'a> {
+    Typed {
+        free_vars: nash_ast::FreeVars<'a>,
+        args: &'a [CanTypedPattern<'a>],
+        typ: &'a Located<CanType<'a>>,
+    },
+    Untyped {
+        args: &'a [&'a Located<nash_ast::Pattern<'a>>],
+    },
+}
+
 fn check_let_cycle<'a>(
     bump: &'a Bump,
     pairs: &[(&'a str, LetBinding<'a>)],
 ) -> Result<Vec<&'a CanDef<'a>>, Vec<Error<'a>>> {
-    let mut defs = Vec::new();
-    for &(name, ref binding) in pairs {
+    let mut defs: Vec<&'a CanDef<'a>> = Vec::new();
+    for (position, (_, binding)) in pairs.iter().enumerate() {
         match binding {
             LetBinding::Define(def) => {
                 let has_args = match def {
@@ -1060,27 +1149,17 @@ fn check_let_cycle<'a>(
                     let def_name = match def {
                         CanDef::Def { name, .. } | CanDef::TypedDef { name, .. } => *name,
                     };
-                    let others: Vec<&'a str> = pairs
-                        .iter()
-                        .filter(|(n, _)| *n != name)
-                        .map(|(n, _)| *n)
-                        .collect();
                     return Err(vec![Error::RecursiveLet {
                         name: def_name,
-                        others: bump.alloc_slice_fill_iter(others),
+                        others: to_cycle_names(bump, &pairs[position + 1..], &defs),
                     }]);
                 }
                 defs.push(*def);
             }
             LetBinding::Edge(name_loc) => {
-                let others: Vec<&'a str> = pairs
-                    .iter()
-                    .filter(|(n, _)| *n != name)
-                    .map(|(n, _)| *n)
-                    .collect();
                 return Err(vec![Error::RecursiveLet {
                     name: name_loc,
-                    others: bump.alloc_slice_fill_iter(others),
+                    others: to_cycle_names(bump, &pairs[position + 1..], &defs),
                 }]);
             }
             LetBinding::Destruct(..) => {}
@@ -1089,54 +1168,70 @@ fn check_let_cycle<'a>(
     Ok(defs)
 }
 
+/// Mirrors Elm's `toNames`: the not-yet-visited bindings (skipping
+/// destructure nodes, whose synthetic names are meaningless to users)
+/// followed by the already-validated defs in source order.
+fn to_cycle_names<'a>(
+    bump: &'a Bump,
+    rest: &[(&'a str, LetBinding<'a>)],
+    defs: &[&'a CanDef<'a>],
+) -> &'a [&'a str] {
+    let mut names: Vec<&'a str> = Vec::new();
+    for (_, binding) in rest {
+        match binding {
+            LetBinding::Define(def) => names.push(def_name(def)),
+            LetBinding::Edge(name_loc) => names.push(name_loc.value),
+            LetBinding::Destruct(..) => {}
+        }
+    }
+    for def in defs {
+        names.push(def_name(def));
+    }
+    bump.alloc_slice_fill_iter(names)
+}
+
+fn def_name<'a>(def: &CanDef<'a>) -> &'a str {
+    match def {
+        CanDef::Def { name, .. } | CanDef::TypedDef { name, .. } => name.value,
+    }
+}
+
+/// Mirrors Elm's `gatherTypedArgs`: walk the annotation and the source
+/// argument patterns together, canonicalizing each pattern against the
+/// (iteratively dealiased) argument type. Binders land in `bound` so the
+/// caller can run one duplicate check across all arguments.
 pub fn gather_typed_args<'a>(
     bump: &'a Bump,
+    env: &Env<'a>,
     func_name: &'a str,
-    can_args: &[&'a Located<nash_ast::Pattern<'a>>],
-    annotation: &'a Annotation<'a>,
-) -> Result<&'a [CanTypedPattern<'a>], Vec<Error<'a>>> {
-    let mut result = Vec::with_capacity(can_args.len());
-    let mut current_type = annotation.typ;
-    for arg in can_args {
-        let dealiased = types::iterated_dealias(current_type);
+    src_args: &'a [&'a Located<nash_source::Pattern<'a>>],
+    annotation_typ: &'a Located<CanType<'a>>,
+    bound: &mut Vec<(&'a str, Region)>,
+) -> Result<(Vec<CanTypedPattern<'a>>, &'a Located<CanType<'a>>), Vec<Error<'a>>> {
+    let mut typed_args = Vec::with_capacity(src_args.len());
+    let mut current_type = annotation_typ;
+    for (index, src_arg) in src_args.iter().enumerate() {
+        let dealiased = types::iterated_dealias(bump, current_type);
         match &dealiased.value {
             CanType::Lambda { from, to } => {
-                result.push(CanTypedPattern {
-                    pattern: arg,
-                    typ: from,
-                });
+                let pattern = pattern::canonicalize(bump, env, src_arg, bound)?;
+                typed_args.push(CanTypedPattern { pattern, typ: from });
                 current_type = to;
             }
             _ => {
+                let start = src_args[index].region;
+                let end = src_args
+                    .last()
+                    .expect("non-empty: inside for loop over src_args")
+                    .region;
                 return Err(vec![Error::AnnotationTooShort {
-                    region: Region::span_across(
-                        &can_args
-                            .first()
-                            .expect("non-empty: inside for loop over can_args")
-                            .region,
-                        &can_args
-                            .last()
-                            .expect("non-empty: inside for loop over can_args")
-                            .region,
-                    ),
+                    region: Region::span_across(&start, &end),
                     name: func_name,
+                    index,
+                    leftovers: src_args.len() - index,
                 }]);
             }
         }
     }
-    Ok(bump.alloc_slice_fill_iter(result))
-}
-
-pub fn peel_result_type<'a>(
-    annotation: &'a Annotation<'a>,
-    arg_count: usize,
-) -> &'a Located<nash_ast::Type<'a>> {
-    let mut current = annotation.typ;
-    for _ in 0..arg_count {
-        let dealiased = types::iterated_dealias(current);
-        if let CanType::Lambda { to, .. } = &dealiased.value {
-            current = to;
-        }
-    }
-    current
+    Ok((typed_args, current_type))
 }

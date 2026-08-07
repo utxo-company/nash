@@ -55,18 +55,23 @@ pub fn canonicalize<'a>(
     let mut env =
         environment::foreign::create_initial_env(bump, home, context.interfaces, module.imports)?;
 
+    // Phase order mirrors Elm's `Local.add`: addTypes (type dups, union
+    // free-var checks, alias SCC + canonicalization), then addVars, then
+    // addCtors (which canonicalizes constructor argument types).
     environment::local::add_union_types(&mut env, module.unions, module.aliases)?;
+    for union in module.unions {
+        check_union_free_vars(bump, union)?;
+    }
     let aliases = canonicalize_aliases(bump, &mut env, module.aliases)?;
-    let unions = canonicalize_unions(bump, &env, module.unions)?;
-
-    environment::local::add_ctors(&mut env, unions, aliases)?;
     environment::local::add_vars(&mut env, module.values)?;
-    environment::local::add_binops(&mut env, module.binops)?;
+    let unions = canonicalize_unions(bump, &env, module.unions)?;
+    environment::local::add_ctors(bump, &mut env, module.unions, unions, aliases)?;
+    environment::local::check_binops(&env, module.binops)?;
 
     let mut warnings = Vec::new();
     let decls = canonicalize_decls(bump, &env, module.values, &mut warnings)?;
     let binops = canonicalize_binops(bump, module.binops);
-    let exports = canonicalize_exports(bump, &env, module)?;
+    let exports = canonicalize_exports(bump, module)?;
 
     let can_module = CanModule {
         name: env.home,
@@ -148,26 +153,26 @@ fn canonicalize_decls<'a>(
                 });
             }
             scc::Scc::Cyclic(group) => {
-                // Phase 2: SCC on DIRECT deps within cyclic group
-                let group_map: BTreeMap<&str, NodeOne<'a>> =
-                    group.into_iter().map(|n| (n.name, n)).collect();
-                let group_set: BTreeSet<&str> = group_map.keys().copied().collect();
+                // Phase 2: SCC on DIRECT deps within the cyclic group,
+                // preserving the group's own node order like Elm's
+                // `Graph.stronglyConnComp subNodes`.
+                let group_names: BTreeSet<&str> = group.iter().map(|n| n.name).collect();
 
-                let phase2_nodes: Vec<scc::Node<'_, &str>> = group_map
+                let phase2_nodes: Vec<scc::Node<'_, &NodeOne<'a>>> = group
                     .iter()
-                    .map(|(&name, node)| {
+                    .map(|node| {
                         let deps = if node.has_args {
                             vec![] // functions: body is delayed
                         } else {
                             node.free_locals
                                 .iter()
-                                .filter(|(k, uses)| group_set.contains(*k) && uses.direct > 0)
+                                .filter(|(k, uses)| group_names.contains(*k) && uses.direct > 0)
                                 .map(|(k, _)| *k)
                                 .collect()
                         };
                         scc::Node {
-                            key: name,
-                            value: name,
+                            key: node.name,
+                            value: node,
                             deps,
                         }
                     })
@@ -175,24 +180,30 @@ fn canonicalize_decls<'a>(
 
                 let phase2_sccs = scc::strongly_connected_components(phase2_nodes);
 
+                // Elm's `traverse detectBadCycles` accumulates every bad
+                // cycle in this group before giving up.
                 let mut rec_defs: Vec<&'a nash_ast::Def<'a>> = Vec::new();
+                let mut cycle_errors: Vec<Error<'a>> = Vec::new();
                 for sub_scc in phase2_sccs {
                     match sub_scc {
-                        scc::Scc::Acyclic(name) => {
-                            rec_defs.push(group_map[name].def);
+                        scc::Scc::Acyclic(node) => {
+                            rec_defs.push(node.def);
                         }
-                        scc::Scc::Cyclic(bad_names) => {
-                            let first = bad_names[0];
-                            let def_name = match group_map[first].def {
+                        scc::Scc::Cyclic(bad_nodes) => {
+                            let def_name = match bad_nodes[0].def {
                                 nash_ast::Def::Def { name, .. }
                                 | nash_ast::Def::TypedDef { name, .. } => name,
                             };
-                            return Err(vec![Error::RecursiveDecl {
+                            cycle_errors.push(Error::RecursiveDecl {
                                 name: def_name,
-                                others: bump.alloc_slice_fill_iter(bad_names[1..].iter().copied()),
-                            }]);
+                                others: bump
+                                    .alloc_slice_fill_iter(bad_nodes[1..].iter().map(|n| n.name)),
+                            });
                         }
                     }
+                }
+                if !cycle_errors.is_empty() {
+                    return Err(cycle_errors);
                 }
 
                 if let Some((first, rest)) = rec_defs.split_first() {
@@ -215,6 +226,17 @@ struct NodeOne<'a> {
     free_locals: expression::FreeLocals<'a>,
 }
 
+enum TopLevelDefBuilder<'a> {
+    Typed {
+        free_vars: nash_ast::FreeVars<'a>,
+        args: &'a [nash_ast::TypedPattern<'a>],
+        typ: &'a Located<nash_ast::Type<'a>>,
+    },
+    Untyped {
+        args: &'a [&'a Located<nash_ast::Pattern<'a>>],
+    },
+}
+
 fn to_node_one<'a>(
     bump: &'a Bump,
     env: &Env<'a>,
@@ -222,18 +244,46 @@ fn to_node_one<'a>(
     warnings: &mut Vec<Warning<'a>>,
 ) -> Result<NodeOne<'a>, Vec<Error<'a>>> {
     let src = &value.value;
-    let mut arg_bindings = pattern::Bindings::new();
-    let mut can_args = Vec::with_capacity(src.arguments.len());
-    for arg in src.arguments {
-        let (can_pat, bindings) = pattern::verify(
+
+    // Mirrors Elm's `toNodeOne`: typed definitions resolve the annotation
+    // and match it against the arguments before the body is touched, and
+    // one duplicate scope spans all arguments either way.
+    let (builder, arg_bindings) = if let Some(ann) = src.annotation {
+        let annotation = types::to_annotation(bump, env, ann)?;
+        let mut bound: Vec<(&'a str, Region)> = Vec::new();
+        let (typed_args, result_type) = expression::gather_typed_args(
+            bump,
+            env,
+            src.name.value,
+            src.arguments,
+            annotation.typ,
+            &mut bound,
+        )?;
+        let arg_bindings =
+            pattern::detect_duplicates(DuplicatePatternContext::FuncArgs(src.name.value), bound)?;
+        (
+            TopLevelDefBuilder::Typed {
+                free_vars: annotation.free_vars,
+                args: bump.alloc_slice_fill_iter(typed_args),
+                typ: result_type,
+            },
+            arg_bindings,
+        )
+    } else {
+        let (can_args, arg_bindings) = pattern::verify_all(
             bump,
             env,
             DuplicatePatternContext::FuncArgs(src.name.value),
-            arg,
+            src.arguments,
         )?;
-        can_args.push(can_pat);
-        arg_bindings.extend(bindings);
-    }
+        (
+            TopLevelDefBuilder::Untyped {
+                args: bump.alloc_slice_fill_iter(can_args),
+            },
+            arg_bindings,
+        )
+    };
+
     let body_env = env.add_locals(&arg_bindings)?;
     let mut free_locals = expression::FreeLocals::new();
     let can_body =
@@ -246,24 +296,23 @@ fn to_node_one<'a>(
         warnings,
     );
 
-    let def = if let Some(ann) = src.annotation {
-        let annotation = types::to_annotation(bump, env, ann)?;
-        let typed_args =
-            expression::gather_typed_args(bump, src.name.value, &can_args, annotation)?;
-        let result_type = expression::peel_result_type(annotation, can_args.len());
-        bump.alloc(nash_ast::Def::TypedDef {
+    let def = match builder {
+        TopLevelDefBuilder::Typed {
+            free_vars,
+            args,
+            typ,
+        } => bump.alloc(nash_ast::Def::TypedDef {
             name: src.name,
-            free_vars: annotation.free_vars,
-            args: typed_args,
+            free_vars,
+            args,
             body: can_body,
-            typ: result_type,
-        })
-    } else {
-        bump.alloc(nash_ast::Def::Def {
+            typ,
+        }),
+        TopLevelDefBuilder::Untyped { args } => bump.alloc(nash_ast::Def::Def {
             name: src.name,
-            args: bump.alloc_slice_fill_iter(can_args),
+            args,
             body: can_body,
-        })
+        }),
     };
 
     Ok(NodeOne {
@@ -293,8 +342,6 @@ fn canonicalize_union<'a>(
     env: &Env<'a>,
     source_union: &'a Located<SourceUnion<'a>>,
 ) -> Result<CanUnion<'a>, Vec<Error<'a>>> {
-    check_union_free_vars(bump, source_union)?;
-
     let union = &source_union.value;
     let parameters =
         bump.alloc_slice_fill_iter(union.arguments.iter().copied().map(|arg| arg.value));
@@ -356,6 +403,7 @@ fn canonicalize_aliases<'a>(
         .map(|&alias| {
             let mut deps = Vec::new();
             collect_type_edges(&alias.value.typ.value, &alias_names, &mut deps);
+            deps.reverse();
             scc::Node {
                 key: alias.value.name.value,
                 value: alias,
@@ -371,15 +419,20 @@ fn canonicalize_aliases<'a>(
             scc::Scc::Acyclic(source) => {
                 check_alias_free_vars(bump, source)?;
                 let alias = canonicalize_single_alias(bump, env, source)?;
-                environment::local::add_alias_type(bump, env, &alias.value);
+                environment::local::add_alias_type(env, &alias.value);
                 results.insert(source.value.name.value, alias);
             }
             scc::Scc::Cyclic(cycle) => {
+                // Elm checks the head alias's type variables before
+                // reporting the cycle, so a messed-up cyclic alias gets
+                // the variable error first.
                 let first = &cycle[0];
+                check_alias_free_vars(bump, first)?;
                 return Err(vec![Error::RecursiveAlias {
                     region: first.value.name.region,
                     name: first.value.name.value,
                     args: bump.alloc_slice_fill_iter(first.value.arguments.iter().map(|a| a.value)),
+                    typ: first.value.typ,
                     others: bump
                         .alloc_slice_fill_iter(cycle[1..].iter().map(|a| a.value.name.value)),
                 }]);
@@ -419,8 +472,10 @@ fn check_union_free_vars<'a>(
 ) -> Result<(), Vec<Error<'a>>> {
     let u = &union.value;
 
+    // Elm builds the argument dups dict with foldr, so occurrences are
+    // inserted in reverse source order; replicated for identical regions.
     dups::detect(
-        u.arguments.iter().map(|a| (a.value, a.region)),
+        u.arguments.iter().rev().map(|a| (a.value, a.region)),
         |arg_name, first, second| Error::DuplicateUnionArg {
             type_name: u.name.value,
             arg_name,
@@ -431,8 +486,10 @@ fn check_union_free_vars<'a>(
 
     let bound: BTreeSet<&str> = u.arguments.iter().map(|a| a.value).collect();
 
+    // Elm folds ctors with foldr and overwriting inserts: later ctors are
+    // processed first, so earlier ctors win region conflicts.
     let mut free_vars: BTreeMap<&str, Region> = BTreeMap::new();
-    for ctor in u.ctors {
+    for ctor in u.ctors.iter().rev() {
         for arg in ctor.arguments {
             collect_free_type_vars(arg, &mut free_vars);
         }
@@ -466,8 +523,9 @@ fn check_alias_free_vars<'a>(
 ) -> Result<(), Vec<Error<'a>>> {
     let a = &alias.value;
 
+    // Reverse source order, matching Elm's foldr-built dups dict.
     dups::detect(
-        a.arguments.iter().map(|arg| (arg.value, arg.region)),
+        a.arguments.iter().rev().map(|arg| (arg.value, arg.region)),
         |arg_name, first, second| Error::DuplicateAliasArg {
             type_name: a.name.value,
             arg_name,
@@ -481,7 +539,8 @@ fn check_alias_free_vars<'a>(
     let mut free_vars: BTreeMap<&str, Region> = BTreeMap::new();
     collect_free_type_vars(a.typ, &mut free_vars);
 
-    let unused: Vec<(&str, Region)> = a
+    // Name-sorted, like Elm's `Map.toList (Map.difference bound free)`.
+    let unused: BTreeMap<&str, Region> = a
         .arguments
         .iter()
         .filter(|arg| !free_vars.contains_key(arg.value))
@@ -519,7 +578,9 @@ fn collect_type_edges<'a>(
         }
         SourceType::Var(_) => {}
         SourceType::Type { name, args, .. } => {
-            if alias_names.contains(name) && !edges.contains(name) {
+            // Elm's `getEdges` keeps duplicates; the caller reverses the
+            // final list to match its prepend accumulation.
+            if alias_names.contains(name) {
                 edges.push(name);
             }
             for arg in *args {
@@ -552,10 +613,12 @@ fn collect_type_edges<'a>(
     }
 }
 
+/// Mirrors Elm's `addFreeVars`: overwriting inserts (the last occurrence
+/// wins the region), and the record extension variable counts as free.
 fn collect_free_type_vars<'a>(typ: &Located<SourceType<'a>>, vars: &mut BTreeMap<&'a str, Region>) {
     match &typ.value {
         SourceType::Var(name) => {
-            vars.entry(name).or_insert(typ.region);
+            vars.insert(name, typ.region);
         }
         SourceType::Lambda { from, to } => {
             collect_free_type_vars(from, vars);
@@ -566,7 +629,10 @@ fn collect_free_type_vars<'a>(typ: &Located<SourceType<'a>>, vars: &mut BTreeMap
                 collect_free_type_vars(arg, vars);
             }
         }
-        SourceType::Record { fields, .. } => {
+        SourceType::Record { fields, ext } => {
+            if let Some(ext_var) = ext {
+                vars.insert(ext_var.value, ext_var.region);
+            }
             for field in *fields {
                 collect_free_type_vars(field.typ, vars);
             }
@@ -586,40 +652,145 @@ fn collect_free_type_vars<'a>(typ: &Located<SourceType<'a>>, vars: &mut BTreeMap
     }
 }
 
+/// Mirrors Elm's `canonicalizeExports`: each exposed item is resolved
+/// against the module's own values/types/binops first (accumulating all
+/// resolution errors), and only then are duplicates detected. The result
+/// is name-keyed, hence name-sorted, like Elm's `Map Name Export`.
 fn canonicalize_exports<'a>(
     bump: &'a Bump,
-    env: &Env<'a>,
     module: &SourceModule<'a>,
 ) -> Result<Exports<'a>, Vec<Error<'a>>> {
     match module.exports.value {
         Exposing::Open => Ok(Exports::Everything(module.exports.region)),
         Exposing::Explicit(exposed) => {
-            dups::detect(
-                exposed.iter().map(|e| exposed_name_and_region(e)),
-                |name, first, second| Error::ExportDuplicate {
-                    name,
-                    first,
-                    second,
-                },
-            )?;
-            let exports = accumulate::try_all_alloc_ref(
-                bump,
-                exposed
-                    .iter()
-                    .copied()
-                    .map(|e| canonicalize_exposed(bump, env, e)),
-            )?;
-            Ok(Exports::Explicit(exports))
+            let value_names: BTreeSet<&str> =
+                module.values.iter().map(|v| v.value.name.value).collect();
+            let union_names: BTreeSet<&str> =
+                module.unions.iter().map(|u| u.value.name.value).collect();
+            let alias_names: BTreeSet<&str> =
+                module.aliases.iter().map(|a| a.value.name.value).collect();
+            let binop_names: BTreeSet<&str> = module.binops.iter().map(|b| b.value.op).collect();
+
+            let mut resolved: Vec<(&'a str, Region, Export<'a>)> = Vec::new();
+            let mut errors: Vec<Error<'a>> = Vec::new();
+
+            for item in exposed {
+                match item {
+                    Exposed::Lower(name) => {
+                        if value_names.contains(name.value) {
+                            resolved.push((name.value, name.region, Export::Value(name.value)));
+                        } else {
+                            errors.push(Error::ExportNotFound {
+                                region: name.region,
+                                kind: VarKind::BadVar,
+                                name: name.value,
+                                suggestions: bump
+                                    .alloc_slice_fill_iter(value_names.iter().copied()),
+                            });
+                        }
+                    }
+                    Exposed::Operator { region, op } => {
+                        if binop_names.contains(*op) {
+                            resolved.push((op, *region, Export::Binop(op)));
+                        } else {
+                            errors.push(Error::ExportNotFound {
+                                region: *region,
+                                kind: VarKind::BadOp,
+                                name: op,
+                                suggestions: bump
+                                    .alloc_slice_fill_iter(binop_names.iter().copied()),
+                            });
+                        }
+                    }
+                    Exposed::Upper { name, privacy } => match privacy {
+                        Privacy::Public(dot_dot_region) => {
+                            if union_names.contains(name.value) {
+                                resolved.push((
+                                    name.value,
+                                    name.region,
+                                    Export::UnionOpen(name.value),
+                                ));
+                            } else if alias_names.contains(name.value) {
+                                errors.push(Error::ExportOpenAlias {
+                                    region: *dot_dot_region,
+                                    name: name.value,
+                                });
+                            } else {
+                                errors.push(Error::ExportNotFound {
+                                    region: name.region,
+                                    kind: VarKind::BadType,
+                                    name: name.value,
+                                    suggestions: type_suggestions(bump, &union_names, &alias_names),
+                                });
+                            }
+                        }
+                        Privacy::Private => {
+                            if union_names.contains(name.value) {
+                                resolved.push((
+                                    name.value,
+                                    name.region,
+                                    Export::UnionClosed(name.value),
+                                ));
+                            } else if alias_names.contains(name.value) {
+                                resolved.push((name.value, name.region, Export::Alias(name.value)));
+                            } else {
+                                errors.push(Error::ExportNotFound {
+                                    region: name.region,
+                                    kind: VarKind::BadType,
+                                    name: name.value,
+                                    suggestions: type_suggestions(bump, &union_names, &alias_names),
+                                });
+                            }
+                        }
+                    },
+                }
+            }
+
+            if !errors.is_empty() {
+                return Err(errors);
+            }
+
+            let mut occurrences: BTreeMap<&'a str, Vec<(Region, Export<'a>)>> = BTreeMap::new();
+            for (name, region, export) in resolved {
+                occurrences.entry(name).or_default().push((region, export));
+            }
+
+            let mut exports: Vec<&'a Located<Export<'a>>> = Vec::new();
+            let mut dup_errors: Vec<Error<'a>> = Vec::new();
+            for (name, entries) in occurrences {
+                if entries.len() > 1 {
+                    dup_errors.push(Error::ExportDuplicate {
+                        name,
+                        first: entries[0].0,
+                        second: entries[1].0,
+                    });
+                } else {
+                    let (region, export) = entries.into_iter().next().expect("one entry");
+                    exports.push(bump.alloc(Located::at(region, export)));
+                }
+            }
+
+            if !dup_errors.is_empty() {
+                return Err(dup_errors);
+            }
+
+            Ok(Exports::Explicit(bump.alloc_slice_fill_iter(exports)))
         }
     }
 }
 
-fn exposed_name_and_region<'a>(exposed: &Exposed<'a>) -> (&'a str, Region) {
-    match exposed {
-        Exposed::Lower(name) => (name.value, name.region),
-        Exposed::Upper { name, .. } => (name.value, name.region),
-        Exposed::Operator { region, op } => (op, *region),
-    }
+/// Elm suggests `Map.keys unions ++ Map.keys aliases` for a bad type export.
+fn type_suggestions<'a>(
+    bump: &'a Bump,
+    union_names: &BTreeSet<&'a str>,
+    alias_names: &BTreeSet<&'a str>,
+) -> &'a [&'a str] {
+    let names: Vec<&'a str> = union_names
+        .iter()
+        .chain(alias_names.iter())
+        .copied()
+        .collect();
+    bump.alloc_slice_fill_iter(names)
 }
 
 fn canonicalize_binops<'a>(
@@ -637,94 +808,6 @@ fn canonicalize_binops<'a>(
             },
         ))
     }))
-}
-
-fn canonicalize_exposed<'a>(
-    bump: &'a Bump,
-    env: &Env<'a>,
-    exposed: &Exposed<'a>,
-) -> Result<&'a Located<Export<'a>>, Vec<Error<'a>>> {
-    Ok(bump.alloc(Located::at(
-        exposed_region(exposed),
-        canonicalize_export(env, exposed)?,
-    )))
-}
-
-fn canonicalize_export<'a>(
-    env: &Env<'a>,
-    exposed: &Exposed<'a>,
-) -> Result<Export<'a>, Vec<Error<'a>>> {
-    Ok(match exposed {
-        Exposed::Lower(name) => {
-            if matches!(
-                env.vars.get(name.value),
-                Some(environment::Var::TopLevel(_))
-            ) {
-                Export::Value(name.value)
-            } else {
-                return Err(vec![Error::ExportNotFound {
-                    region: name.region,
-                    kind: VarKind::BadVar,
-                    name: name.value,
-                }]);
-            }
-        }
-        Exposed::Upper { name, privacy } => match env.types.get(name.value) {
-            Some(environment::Info::Specific(home, environment::Type::Union { .. }))
-                if *home == env.home =>
-            {
-                match privacy {
-                    Privacy::Public(_) => Export::UnionOpen(name.value),
-                    Privacy::Private => Export::UnionClosed(name.value),
-                }
-            }
-            Some(environment::Info::Specific(home, environment::Type::Alias { .. }))
-                if *home == env.home =>
-            {
-                match privacy {
-                    Privacy::Public(region) => {
-                        return Err(vec![Error::ExportOpenAlias {
-                            region: *region,
-                            name: name.value,
-                        }]);
-                    }
-                    Privacy::Private => Export::Alias(name.value),
-                }
-            }
-            _ => {
-                return Err(vec![Error::ExportNotFound {
-                    region: name.region,
-                    kind: VarKind::BadType,
-                    name: name.value,
-                }]);
-            }
-        },
-        Exposed::Operator { region, op } => match env.binops.get(*op) {
-            Some(environment::Info::Specific(home, _)) if *home == env.home => Export::Binop(op),
-            _ => {
-                return Err(vec![Error::ExportNotFound {
-                    region: *region,
-                    kind: VarKind::BadOp,
-                    name: op,
-                }]);
-            }
-        },
-    })
-}
-
-fn exposed_region(exposed: &Exposed<'_>) -> Region {
-    match exposed {
-        Exposed::Lower(name) => name.region,
-        Exposed::Upper {
-            name,
-            privacy: Privacy::Public(region),
-        } => Region::span_across(&name.region, region),
-        Exposed::Upper {
-            name,
-            privacy: Privacy::Private,
-        } => name.region,
-        Exposed::Operator { region, .. } => *region,
-    }
 }
 
 // --- Unused import detection ---
@@ -810,7 +893,10 @@ fn collect_from_expr<'a>(
     use nash_ast::Expr::*;
     match expr {
         VarLocal(_) | Str(_) | Int(_) | Accessor(_) | Unit => {}
-        VarTopLevel(q) | VarForeign(q) => add_if_foreign(home, q.home, used),
+        VarTopLevel(q) => add_if_foreign(home, q.home, used),
+        // Only the reference counts as a use: the annotation is data from
+        // the origin module's solver, not something written here.
+        VarForeign { reference, .. } => add_if_foreign(home, reference.home, used),
         VarConstructor {
             reference,
             annotation,
@@ -819,27 +905,16 @@ fn collect_from_expr<'a>(
             add_if_foreign(home, reference.home, used);
             collect_from_type(&annotation.typ.value, home, used);
         }
-        VarOperator {
-            reference,
-            annotation,
-            ..
-        } => {
+        VarOperator { reference, .. } => {
             add_if_foreign(home, reference.home, used);
-            if let Some(ann) = annotation {
-                collect_from_type(&ann.typ.value, home, used);
-            }
         }
         Binop {
             reference,
             left,
             right,
-            annotation,
             ..
         } => {
             add_if_foreign(home, reference.home, used);
-            if let Some(ann) = annotation {
-                collect_from_type(&ann.typ.value, home, used);
-            }
             collect_from_expr(&left.value, home, used);
             collect_from_expr(&right.value, home, used);
         }
@@ -936,7 +1011,12 @@ fn collect_from_pattern<'a>(
 ) {
     use nash_ast::Pattern::*;
     match pat {
-        Anything | Var(_) | Str(_) | Int(_) | Unit | Record(_) | Bool { .. } => {}
+        Anything | Var(_) | Str(_) | Int(_) | Unit | Record(_) => {}
+        // `True`/`False` patterns only ever come from the module named
+        // Basics (see `environment::Ctor::Bool`), so count it as used.
+        Bool { .. } => {
+            used.insert("Basics");
+        }
         Constructor(ctor) => {
             add_if_foreign(home, ctor.reference.home, used);
             for arg in ctor.arguments {
@@ -1088,7 +1168,8 @@ mod tests {
             let bump = Bump::new();
             let can_module = parse_and_canonicalize(&bump, input, Context::default())
                 .expect("expected successful canonicalization");
-            let result = interface::from_module(&bump, &can_module);
+            let annotations = mock_annotations(&bump, &can_module);
+            let result = interface::from_module(&bump, &can_module, &annotations);
             insta::with_settings!({
                 description => format!("Code:\n\n{}", input),
                 omit_expression => true,
@@ -1100,6 +1181,62 @@ mod tests {
 
     fn var_type<'a>(bump: &'a Bump, name: &'a str) -> &'a Located<CanType<'a>> {
         bump.alloc(Located::at(Region::zero(), CanType::Var(name)))
+    }
+
+    /// Stand-in for a solver-produced annotation in tests: `Forall [a] a`.
+    fn test_annotation<'a>(bump: &'a Bump) -> &'a nash_ast::Annotation<'a> {
+        bump.alloc(nash_ast::Annotation {
+            free_vars: bump.alloc_slice_fill_iter(["a"]),
+            typ: var_type(bump, "a"),
+        })
+    }
+
+    /// Solver stand-in for interface extraction tests: give every
+    /// top-level value a `Forall [a] a` annotation, mimicking the map
+    /// Elm's `Interface.fromModule` receives from the solver.
+    fn mock_annotations<'a>(
+        bump: &'a Bump,
+        module: &CanModule<'a>,
+    ) -> crate::interface::Annotations<'a> {
+        fn walk<'a>(
+            decls: &nash_ast::Decls<'a>,
+            bump: &'a Bump,
+            out: &mut crate::interface::Annotations<'a>,
+        ) {
+            match decls {
+                nash_ast::Decls::Declare { definition, next } => {
+                    add(definition, bump, out);
+                    walk(next, bump, out);
+                }
+                nash_ast::Decls::DeclareRec {
+                    definition,
+                    following,
+                    next,
+                } => {
+                    add(definition, bump, out);
+                    for def in *following {
+                        add(def, bump, out);
+                    }
+                    walk(next, bump, out);
+                }
+                nash_ast::Decls::Empty => {}
+            }
+        }
+        fn add<'a>(
+            def: &nash_ast::Def<'a>,
+            bump: &'a Bump,
+            out: &mut crate::interface::Annotations<'a>,
+        ) {
+            let name = match def {
+                nash_ast::Def::Def { name, .. } | nash_ast::Def::TypedDef { name, .. } => {
+                    name.value
+                }
+            };
+            out.insert(name, test_annotation(bump));
+        }
+        let mut annotations = crate::interface::Annotations::new();
+        walk(module.decls, bump, &mut annotations);
+        annotations
     }
 
     fn union_interface<'a>(
@@ -1165,6 +1302,8 @@ mod tests {
             module Main exposing ((|>))
 
             infix left 6 (|>) = apR
+
+            apR x f = f x
         "#
         );
     }
@@ -1688,6 +1827,8 @@ mod tests {
             module Main exposing ((|>))
 
             infix left 6 (|>) = apR
+
+            apR x f = f x
         "#
         );
     }
@@ -1837,6 +1978,10 @@ mod tests {
             infix left 6 (|>) = apR
 
             infix left 6 (|>) = apR2
+
+            apR x f = f x
+
+            apR2 x f = f x
         "#
         );
     }
@@ -2438,7 +2583,7 @@ mod tests {
             },
             values: bump.alloc_slice_fill_iter([crate::interface::InterfaceValue {
                 name: val_name,
-                annotation: None,
+                annotation: test_annotation(bump),
             }]),
             aliases: &[],
             unions: &[],
@@ -2543,23 +2688,23 @@ mod tests {
             values: bump.alloc_slice_fill_iter([
                 InterfaceValue {
                     name: "add",
-                    annotation: None,
+                    annotation: test_annotation(bump),
                 },
                 InterfaceValue {
                     name: "sub",
-                    annotation: None,
+                    annotation: test_annotation(bump),
                 },
                 InterfaceValue {
                     name: "mul",
-                    annotation: None,
+                    annotation: test_annotation(bump),
                 },
                 InterfaceValue {
                     name: "apR",
-                    annotation: None,
+                    annotation: test_annotation(bump),
                 },
                 InterfaceValue {
                     name: "apL",
-                    annotation: None,
+                    annotation: test_annotation(bump),
                 },
             ]),
             aliases: &[],
@@ -2567,30 +2712,35 @@ mod tests {
             binops: bump.alloc_slice_fill_iter([
                 InterfaceBinop {
                     symbol: "+",
+                    annotation: test_annotation(bump),
                     associativity: Associativity::Left,
                     precedence: Precedence(6),
                     function: "add",
                 },
                 InterfaceBinop {
                     symbol: "-",
+                    annotation: test_annotation(bump),
                     associativity: Associativity::Left,
                     precedence: Precedence(6),
                     function: "sub",
                 },
                 InterfaceBinop {
                     symbol: "*",
+                    annotation: test_annotation(bump),
                     associativity: Associativity::Left,
                     precedence: Precedence(7),
                     function: "mul",
                 },
                 InterfaceBinop {
                     symbol: "|>",
+                    annotation: test_annotation(bump),
                     associativity: Associativity::Left,
                     precedence: Precedence(0),
                     function: "apR",
                 },
                 InterfaceBinop {
                     symbol: "<|",
+                    annotation: test_annotation(bump),
                     associativity: Associativity::Right,
                     precedence: Precedence(0),
                     function: "apL",
@@ -3110,6 +3260,7 @@ mod tests {
             unions: &[],
             binops: bump.alloc_slice_fill_iter([InterfaceBinop {
                 symbol: "+",
+                annotation: test_annotation(&bump),
                 associativity: Associativity::Left,
                 precedence: Precedence(6),
                 function: "myAdd",
@@ -3149,12 +3300,13 @@ mod tests {
             },
             values: bump.alloc_slice_fill_iter([InterfaceValue {
                 name: "eq",
-                annotation: None,
+                annotation: test_annotation(&bump),
             }]),
             aliases: &[],
             unions: &[],
             binops: bump.alloc_slice_fill_iter([InterfaceBinop {
                 symbol: "==",
+                annotation: test_annotation(&bump),
                 associativity: Associativity::None,
                 precedence: Precedence(4),
                 function: "eq",
@@ -3200,7 +3352,7 @@ mod tests {
 
     #[test]
     fn duplicate_pattern_lambda_args() {
-        assert_module_snapshot!(
+        assert_module_error_snapshot!(
             r#"
             module Main exposing (..)
 
@@ -3211,7 +3363,7 @@ mod tests {
 
     #[test]
     fn duplicate_pattern_func_args() {
-        assert_module_snapshot!(
+        assert_module_error_snapshot!(
             r#"
             module Main exposing (..)
 
@@ -3383,6 +3535,8 @@ mod tests {
             module Main exposing ((<|))
 
             infix right 0 (<|) = apL
+
+            apL f x = f x
         "#
         );
     }
@@ -3394,6 +3548,8 @@ mod tests {
             module Main exposing ((==))
 
             infix non 4 (==) = eq
+
+            eq a b = a
         "#
         );
     }
@@ -3420,6 +3576,8 @@ mod tests {
             module Main exposing (foo)
 
             infix left 6 (|>) = apR
+
+            apR x f = f x
 
             foo = 42
         "#
@@ -3606,6 +3764,236 @@ mod tests {
         assert!(
             warnings.is_empty(),
             "expected no warnings but got: {warnings:?}"
+        );
+    }
+
+    // === Import privacy (toPublicUnion / toPublicAlias) ===
+
+    fn maybe_interface_with_visibility<'a>(
+        bump: &'a Bump,
+        visibility: UnionVisibility,
+    ) -> Interface<'a> {
+        let base = maybe_with_ctors_interface(bump);
+        Interface {
+            unions: bump.alloc_slice_fill_iter([InterfaceUnion {
+                visibility,
+                ..base.unions[0]
+            }]),
+            ..base
+        }
+    }
+
+    #[test]
+    fn closed_union_does_not_leak_ctors() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe(..))
+
+            x = Just
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([(
+            "Maybe",
+            maybe_interface_with_visibility(&bump, UnionVisibility::Closed),
+        )]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn private_union_not_importable() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe)
+
+            x = 1
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([(
+            "Maybe",
+            maybe_interface_with_visibility(&bump, UnionVisibility::Private),
+        )]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect_err("expected canonicalization error");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn aliased_import_exposes_ctors_unqualified() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe as M exposing (Maybe(..))
+
+            x = Just
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Maybe", maybe_with_ctors_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    // === Let destructuring ===
+
+    #[test]
+    fn let_destruct_self_reference_is_recursive() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            main = let (a, b) = (a, 1) in b
+        "#
+        );
+    }
+
+    #[test]
+    fn let_destruct_ctor_pattern_binds_names() {
+        let input = indoc!(
+            r#"
+            module Main exposing (..)
+
+            import Maybe exposing (Maybe(..))
+
+            f w = let (Just x) = w in x
+        "#
+        );
+        let bump = Bump::new();
+        let interfaces = BTreeMap::from([("Maybe", maybe_with_ctors_interface(&bump))]);
+        let context = Context {
+            package: None,
+            interfaces: Some(&interfaces),
+        };
+        let result = parse_and_canonicalize(&bump, input, context)
+            .expect("expected successful canonicalization");
+        insta::with_settings!({
+            description => format!("Code:\n\n{}", input),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }
+
+    #[test]
+    fn let_destruct_list_pattern_binds_names() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            f w = let [a, b] = w in a
+        "#
+        );
+    }
+
+    // === Record extension variables in type declarations ===
+
+    #[test]
+    fn extensible_record_alias_allowed() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Extend a b = { a | items : b }
+        "#
+        );
+    }
+
+    #[test]
+    fn unbound_record_ext_var_in_alias() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Bad = { r | items : List r }
+        "#
+        );
+    }
+
+    #[test]
+    fn unbound_record_ext_var_in_union() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type Foo = Bar { r | items : List r }
+        "#
+        );
+    }
+
+    #[test]
+    fn let_destruct_local_ctor_pattern_binds_names() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type Wrap a
+                = Wrap a
+
+            f w = let (Wrap x) = w in x
+        "#
+        );
+    }
+
+    #[test]
+    fn binop_function_must_be_top_level() {
+        assert_module_error_snapshot!(
+            r#"
+            module Main exposing ((|>))
+
+            infix left 6 (|>) = missing
+        "#
+        );
+    }
+
+    // === Typed defs through parameterized aliases ===
+
+    #[test]
+    fn typed_def_through_parameterized_alias() {
+        assert_module_snapshot!(
+            r#"
+            module Main exposing (..)
+
+            type alias Transform a = a -> a
+
+            f : Transform (List b)
+            f x = x
+        "#
         );
     }
 }

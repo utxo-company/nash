@@ -68,20 +68,19 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Check that current column is greater than indent level.
+    /// Check that the parser's CURRENT column is past the indent level and
+    /// not at column 1 (which starts a fresh top-level declaration).
     ///
-    /// Called after a chomp to verify indentation.
-    /// Mirrors Elm's `Space.checkIndent`.
-    ///
-    /// Note: Uses `end_col` for the indent check (not current position),
-    /// matching Elm's behavior where the position is passed explicitly.
+    /// Mirrors Elm's `Space.checkIndent`: the passed position is only the
+    /// location to report on failure; the check itself is `col > indent
+    /// && col > 1` on the current state.
     pub fn check_indent<E>(
         &self,
         end_row: Row,
         end_col: Col,
         to_error: impl FnOnce(Row, Col) -> E,
     ) -> Result<(), E> {
-        if end_col > self.indent {
+        if self.col > self.indent && self.col > 1 {
             Ok(())
         } else {
             Err(to_error(end_row, end_col))

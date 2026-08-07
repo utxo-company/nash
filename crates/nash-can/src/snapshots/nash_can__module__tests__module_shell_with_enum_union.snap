@@ -17,7 +17,7 @@ Module {
                     },
                     end: Position {
                         line: 1,
-                        column: 30,
+                        column: 27,
                     },
                 },
                 value: UnionOpen(

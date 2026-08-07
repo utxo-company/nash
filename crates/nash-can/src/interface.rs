@@ -1,17 +1,18 @@
 use bumpalo::Bump;
 use nash_ast::{
-    Alias as CanAlias, AliasArgument, AliasType, Associativity, Binop as CanBinop, Ctor as CanCtor,
-    CtorOpts, Decls, Def, Export, Exports, FieldType, Module as CanModule, ModuleName, PackageName,
-    Precedence, QualifiedName, Type as CanType, Union as CanUnion,
+    Alias as CanAlias, AliasArgument, AliasType, Annotation, Associativity, Binop as CanBinop,
+    Ctor as CanCtor, CtorOpts, Decls, Def, Export, Exports, FieldType, Module as CanModule,
+    ModuleName, PackageName, Precedence, QualifiedName, Type as CanType, Union as CanUnion,
 };
 use nash_region::Located;
 
-/// An exported value with optional type annotation.
+/// An exported value with its type, mirroring Elm's `I.Interface` values
+/// map (`Map Name Can.Annotation`). Every entry comes from the type
+/// solver, so interfaces can only be produced for solved modules.
 #[derive(Clone, Copy, Debug)]
 pub struct InterfaceValue<'a> {
     pub name: &'a str,
-    /// None until type inference is implemented.
-    pub annotation: Option<&'a Located<CanType<'a>>>,
+    pub annotation: &'a Annotation<'a>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,21 +55,36 @@ pub struct InterfaceAlias<'a> {
     pub visibility: AliasVisibility,
 }
 
+/// Mirrors Elm's `I.Binop op annotation associativity precedence`: the
+/// annotation is the underlying function's, from the solver.
 #[derive(Clone, Copy, Debug)]
 pub struct InterfaceBinop<'a> {
     pub symbol: &'a str,
+    pub annotation: &'a Annotation<'a>,
     pub associativity: Associativity,
     pub precedence: Precedence,
     pub function: &'a str,
 }
 
-pub fn from_module<'a>(bump: &'a Bump, module: &CanModule<'a>) -> Interface<'a> {
+/// Type annotations for every top-level value of a module, as produced by
+/// the type solver (Elm's `Map Name Can.Annotation`).
+pub type Annotations<'a> = std::collections::BTreeMap<&'a str, &'a Annotation<'a>>;
+
+/// Mirrors Elm's `I.fromModule home canModule annotations`. Like Elm's
+/// partial `annotations ! name` lookup, a top-level value or operator
+/// function missing from `annotations` is a bug in the caller: interfaces
+/// exist only for fully solved modules.
+pub fn from_module<'a>(
+    bump: &'a Bump,
+    module: &CanModule<'a>,
+    annotations: &Annotations<'a>,
+) -> Interface<'a> {
     Interface {
         home: module.name,
-        values: extract_values(bump, &module.exports, module.decls),
+        values: extract_values(bump, &module.exports, module.decls, annotations),
         unions: extract_unions(bump, &module.exports, module.unions),
         aliases: extract_aliases(bump, &module.exports, module.aliases),
-        binops: extract_binops(bump, &module.exports, module.binops),
+        binops: extract_binops(bump, &module.exports, module.binops, annotations),
     }
 }
 
@@ -95,29 +111,32 @@ impl<'a> InterfaceAlias<'a> {
     }
 }
 
+/// Mirrors Elm's `restrict exports annotations`: every top-level value's
+/// annotation, filtered by the export list.
 fn extract_values<'a>(
     bump: &'a Bump,
     exports: &Exports<'a>,
     decls: &Decls<'a>,
+    annotations: &Annotations<'a>,
 ) -> &'a [InterfaceValue<'a>] {
     let mut names = Vec::new();
     collect_decl_names(decls, &mut names);
 
+    let to_value = |name: &'a str| InterfaceValue {
+        name,
+        annotation: annotations
+            .get(name)
+            .copied()
+            .expect("solver annotations cover every top-level value"),
+    };
+
     match exports {
-        Exports::Everything(_) => {
-            bump.alloc_slice_fill_iter(names.into_iter().map(|name| InterfaceValue {
-                name,
-                annotation: None,
-            }))
-        }
+        Exports::Everything(_) => bump.alloc_slice_fill_iter(names.into_iter().map(to_value)),
         Exports::Explicit(exports) => bump.alloc_slice_fill_iter(
             names
                 .into_iter()
                 .filter(|name| is_exported_value(exports, name))
-                .map(|name| InterfaceValue {
-                    name,
-                    annotation: None,
-                })
+                .map(to_value)
                 .collect::<Vec<_>>(),
         ),
     }
@@ -194,14 +213,22 @@ fn extract_binops<'a>(
     bump: &'a Bump,
     exports: &Exports<'a>,
     binops: &'a [&'a Located<CanBinop<'a>>],
+    annotations: &Annotations<'a>,
 ) -> &'a [InterfaceBinop<'a>] {
     bump.alloc_slice_fill_iter(
         binops
             .iter()
             .filter_map(|binop| {
                 if is_exported_binop(exports, binop.value.symbol) {
+                    // Elm's `toOp` uses `annotations ! name`: the operator's
+                    // function must be a solved top-level value.
+                    let annotation = annotations
+                        .get(binop.value.function)
+                        .copied()
+                        .expect("solver annotations cover every operator function");
                     Some(InterfaceBinop {
                         symbol: binop.value.symbol,
+                        annotation,
                         associativity: binop.value.associativity,
                         precedence: binop.value.precedence,
                         function: binop.value.function,
@@ -282,6 +309,13 @@ fn copy_located_type<'d>(dst: &'d Bump, lt: &Located<CanType<'_>>) -> &'d Locate
     dst.alloc(Located::at(lt.region, copy_type(dst, &lt.value)))
 }
 
+fn copy_annotation<'d>(dst: &'d Bump, a: &Annotation<'_>) -> &'d Annotation<'d> {
+    dst.alloc(Annotation {
+        free_vars: dst.alloc_slice_fill_iter(a.free_vars.iter().map(|v| copy_str(dst, v))),
+        typ: copy_located_type(dst, a.typ),
+    })
+}
+
 fn copy_type<'d>(dst: &'d Bump, t: &CanType<'_>) -> CanType<'d> {
     match t {
         CanType::Lambda { from, to } => CanType::Lambda {
@@ -344,7 +378,7 @@ pub fn deep_copy<'d>(dst: &'d Bump, src: &Interface<'_>) -> Interface<'d> {
         home: copy_module_name(dst, &src.home),
         values: dst.alloc_slice_fill_iter(src.values.iter().map(|v| InterfaceValue {
             name: copy_str(dst, v.name),
-            annotation: v.annotation.map(|a| copy_located_type(dst, a)),
+            annotation: copy_annotation(dst, v.annotation),
         })),
         aliases: dst.alloc_slice_fill_iter(src.aliases.iter().map(|a| InterfaceAlias {
             name: copy_str(dst, a.name),
@@ -362,6 +396,7 @@ pub fn deep_copy<'d>(dst: &'d Bump, src: &Interface<'_>) -> Interface<'d> {
         })),
         binops: dst.alloc_slice_fill_iter(src.binops.iter().map(|b| InterfaceBinop {
             symbol: copy_str(dst, b.symbol),
+            annotation: copy_annotation(dst, b.annotation),
             associativity: b.associativity,
             precedence: b.precedence,
             function: copy_str(dst, b.function),

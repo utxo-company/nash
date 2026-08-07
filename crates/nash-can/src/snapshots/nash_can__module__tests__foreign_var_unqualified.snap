@@ -58,15 +58,35 @@ Module {
                         column: 8,
                     },
                 },
-                value: VarForeign(
-                    QualifiedName {
+                value: VarForeign {
+                    reference: QualifiedName {
                         home: ModuleName {
                             package: None,
                             name: "Foo",
                         },
                         name: "bar",
                     },
-                ),
+                    annotation: Annotation {
+                        free_vars: [
+                            "a",
+                        ],
+                        typ: Located {
+                            region: Region {
+                                start: Position {
+                                    line: 0,
+                                    column: 0,
+                                },
+                                end: Position {
+                                    line: 0,
+                                    column: 0,
+                                },
+                            },
+                            value: Var(
+                                "a",
+                            ),
+                        },
+                    },
+                },
             },
         },
         next: Empty,

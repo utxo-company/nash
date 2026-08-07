@@ -64,84 +64,6 @@ Module {
                             name: Located {
                                 region: Region {
                                     start: Position {
-                                        line: 6,
-                                        column: 9,
-                                    },
-                                    end: Position {
-                                        line: 6,
-                                        column: 13,
-                                    },
-                                },
-                                value: "stop",
-                            },
-                            args: [
-                                Located {
-                                    region: Region {
-                                        start: Position {
-                                            line: 6,
-                                            column: 14,
-                                        },
-                                        end: Position {
-                                            line: 6,
-                                            column: 15,
-                                        },
-                                    },
-                                    value: Var(
-                                        "x",
-                                    ),
-                                },
-                            ],
-                            body: Located {
-                                region: Region {
-                                    start: Position {
-                                        line: 6,
-                                        column: 18,
-                                    },
-                                    end: Position {
-                                        line: 6,
-                                        column: 22,
-                                    },
-                                },
-                                value: Call {
-                                    function: Located {
-                                        region: Region {
-                                            start: Position {
-                                                line: 6,
-                                                column: 18,
-                                            },
-                                            end: Position {
-                                                line: 6,
-                                                column: 20,
-                                            },
-                                        },
-                                        value: VarLocal(
-                                            "go",
-                                        ),
-                                    },
-                                    arguments: [
-                                        Located {
-                                            region: Region {
-                                                start: Position {
-                                                    line: 6,
-                                                    column: 21,
-                                                },
-                                                end: Position {
-                                                    line: 6,
-                                                    column: 22,
-                                                },
-                                            },
-                                            value: VarLocal(
-                                                "x",
-                                            ),
-                                        },
-                                    ],
-                                },
-                            },
-                        },
-                        Def {
-                            name: Located {
-                                region: Region {
-                                    start: Position {
                                         line: 5,
                                         column: 9,
                                     },
@@ -205,6 +127,84 @@ Module {
                                                 },
                                                 end: Position {
                                                     line: 5,
+                                                    column: 22,
+                                                },
+                                            },
+                                            value: VarLocal(
+                                                "x",
+                                            ),
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                        Def {
+                            name: Located {
+                                region: Region {
+                                    start: Position {
+                                        line: 6,
+                                        column: 9,
+                                    },
+                                    end: Position {
+                                        line: 6,
+                                        column: 13,
+                                    },
+                                },
+                                value: "stop",
+                            },
+                            args: [
+                                Located {
+                                    region: Region {
+                                        start: Position {
+                                            line: 6,
+                                            column: 14,
+                                        },
+                                        end: Position {
+                                            line: 6,
+                                            column: 15,
+                                        },
+                                    },
+                                    value: Var(
+                                        "x",
+                                    ),
+                                },
+                            ],
+                            body: Located {
+                                region: Region {
+                                    start: Position {
+                                        line: 6,
+                                        column: 18,
+                                    },
+                                    end: Position {
+                                        line: 6,
+                                        column: 22,
+                                    },
+                                },
+                                value: Call {
+                                    function: Located {
+                                        region: Region {
+                                            start: Position {
+                                                line: 6,
+                                                column: 18,
+                                            },
+                                            end: Position {
+                                                line: 6,
+                                                column: 20,
+                                            },
+                                        },
+                                        value: VarLocal(
+                                            "go",
+                                        ),
+                                    },
+                                    arguments: [
+                                        Located {
+                                            region: Region {
+                                                start: Position {
+                                                    line: 6,
+                                                    column: 21,
+                                                },
+                                                end: Position {
+                                                    line: 6,
                                                     column: 22,
                                                 },
                                             },

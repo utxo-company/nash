@@ -7,11 +7,11 @@ description: "Code:\n\nmodule Main exposing (..)\n\nimport Foo exposing (MyAlias
         region: Region {
             start: Position {
                 line: 3,
-                column: 22,
+                column: 30,
             },
             end: Position {
                 line: 3,
-                column: 29,
+                column: 32,
             },
         },
         name: "MyAlias",

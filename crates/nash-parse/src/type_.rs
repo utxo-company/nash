@@ -525,6 +525,30 @@ macro_rules! assert_type_snapshot {
     }};
 }
 
+/// Snapshot test macro for multiline types, laid out as they would appear
+/// indented inside a declaration (see `test_support::indent_fragment`).
+#[cfg(test)]
+macro_rules! assert_indented_type_snapshot {
+    ($code:expr) => {{
+        let bump = bumpalo::Bump::new();
+        let fragment = indoc::indoc!($code);
+        let indented = $crate::test_support::indent_fragment(fragment);
+        let src = bump.alloc_str(&indented);
+        let mut parser = $crate::Parser::new(&bump, src.as_bytes());
+        parser
+            .chomp(|_, _, _| "space error")
+            .expect("expected leading indent");
+        let (result, _end) = parser.type_expr().expect("expected successful parse");
+
+        insta::with_settings!({
+            description => format!("Code (indented inside a declaration):\n\n{}", indented),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     // Type variables
@@ -630,7 +654,7 @@ mod tests {
 
     #[test]
     fn tuple_multiline() {
-        assert_type_snapshot!(
+        assert_indented_type_snapshot!(
             "(
                 Int,
                 String,
@@ -672,7 +696,7 @@ mod tests {
 
     #[test]
     fn record_multiline() {
-        assert_type_snapshot!(
+        assert_indented_type_snapshot!(
             "{
                 name : String,
                 age : Int,

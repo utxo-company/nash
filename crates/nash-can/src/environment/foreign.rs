@@ -5,9 +5,14 @@ use nash_ast::{ModuleName, Type as CanType};
 use nash_region::{Located, Region};
 use nash_source::{Exposed, Exposing, Import as SourceImport, Privacy};
 
-use super::{Binop, Ctor, Env, Type, Var, merge_exposed, merge_qualified};
+use super::{Binop, Ctor, Env, Info, Type, Var, merge_exposed, merge_qualified};
 use crate::error::Error;
 use crate::interface::Interface;
+
+/// Per-type import info, mirroring Elm's `rawTypeInfo`: the env type plus
+/// the constructors it exposes, both already filtered through interface
+/// privacy (`toPublicUnion` / `toPublicAlias`).
+type RawTypeInfo<'a> = BTreeMap<&'a str, (Type<'a>, BTreeMap<&'a str, Ctor<'a>>)>;
 
 pub fn create_initial_env<'a>(
     bump: &'a Bump,
@@ -33,7 +38,7 @@ pub fn create_initial_env<'a>(
     };
     env.types.insert(
         "List",
-        super::Info::Specific(
+        Info::Specific(
             list_home,
             Type::Union {
                 arity: 1,
@@ -42,142 +47,139 @@ pub fn create_initial_env<'a>(
         ),
     );
 
+    let mut errors = Vec::new();
+
     for import in imports {
-        let interface = find_interface(interfaces, import)?;
+        let interface = match find_interface(interfaces, import) {
+            Ok(interface) => interface,
+            Err(errs) => {
+                errors.extend(errs);
+                continue;
+            }
+        };
         let prefix = import.alias.unwrap_or(import.import.value);
 
-        add_qualified_types(&mut env, interface, prefix);
-        add_qualified_ctors(bump, &mut env, interface, prefix);
-        add_qualified_values(&mut env, interface, prefix);
+        let raw_type_info = build_raw_type_info(bump, interface);
 
-        // Unqualified exposure depends on the exposing clause
+        // Qualified access is always available, from the same
+        // privacy-filtered tables (Elm's `qvs2`/`qts2`/`qcs2`).
+        for (name, (typ, ctors)) in &raw_type_info {
+            merge_qualified(&mut env.q_types, prefix, name, interface.home, *typ);
+            for (ctor_name, ctor) in ctors {
+                merge_qualified(&mut env.q_ctors, prefix, ctor_name, interface.home, *ctor);
+            }
+        }
+        for value in interface.values {
+            merge_qualified(
+                &mut env.q_vars,
+                prefix,
+                value.name,
+                interface.home,
+                value.annotation,
+            );
+        }
+
+        // Unqualified exposure depends on the exposing clause.
         match &import.exposing {
             Exposing::Open => {
-                add_open_types(&mut env, interface);
-                add_open_ctors(&mut env, interface);
-                add_open_values(&mut env, interface);
-                add_open_binops(&mut env, interface);
+                for (name, (typ, ctors)) in &raw_type_info {
+                    merge_exposed(&mut env.types, name, interface.home, *typ);
+                    for (ctor_name, ctor) in ctors {
+                        merge_exposed(&mut env.ctors, ctor_name, interface.home, *ctor);
+                    }
+                }
+                for value in interface.values {
+                    add_single_value(&mut env, interface.home, value.name, value.annotation);
+                }
+                for binop in interface.binops {
+                    let info = to_env_binop(interface.home, binop);
+                    merge_exposed(&mut env.binops, binop.symbol, interface.home, info);
+                }
             }
             Exposing::Explicit(exposed) => {
-                validate_explicit_exposing(bump, &mut env, interface, exposed)?;
+                if let Err(errs) =
+                    add_explicit_exposing(bump, &mut env, interface, &raw_type_info, exposed)
+                {
+                    errors.extend(errs);
+                }
             }
         }
     }
 
-    Ok(env)
+    if errors.is_empty() {
+        Ok(env)
+    } else {
+        Err(errors)
+    }
 }
 
-// --- Qualified (always) ---
+/// Mirrors Elm's `rawTypeInfo`: build the importable view of an interface,
+/// applying union/alias privacy. Closed unions come through with no
+/// constructors; private types are absent entirely.
+fn build_raw_type_info<'a>(bump: &'a Bump, interface: &Interface<'a>) -> RawTypeInfo<'a> {
+    let mut info: RawTypeInfo<'a> = BTreeMap::new();
 
-fn add_qualified_types<'a>(env: &mut Env<'a>, interface: &Interface<'a>, prefix: &'a str) {
-    for alias in interface.aliases {
-        let typ = Type::Alias {
-            arity: alias.parameters.len(),
-            home: interface.home,
-            parameters: alias.parameters,
-            typ: alias.typ,
-        };
-        merge_qualified(&mut env.q_types, prefix, alias.name, interface.home, typ);
-    }
     for union in interface.unions {
-        let typ = Type::Union {
-            arity: union.parameters.len(),
-            home: interface.home,
-        };
-        merge_qualified(&mut env.q_types, prefix, union.name, interface.home, typ);
-    }
-}
-
-fn add_qualified_ctors<'a>(
-    bump: &'a Bump,
-    env: &mut Env<'a>,
-    interface: &Interface<'a>,
-    prefix: &'a str,
-) {
-    for union in interface.unions {
-        let can_union = make_can_union(bump, union);
-        for ctor in union.ctors {
-            let info = make_union_ctor(interface.home, union, can_union, ctor);
-            merge_qualified(&mut env.q_ctors, prefix, ctor.name, interface.home, info);
-        }
-    }
-    for alias in interface.aliases {
-        if let Some(info) = make_record_ctor(bump, interface.home, alias) {
-            merge_qualified(&mut env.q_ctors, prefix, alias.name, interface.home, info);
-        }
-    }
-}
-
-fn add_qualified_values<'a>(env: &mut Env<'a>, interface: &Interface<'a>, prefix: &'a str) {
-    for iv in interface.values {
-        let inner = env.q_vars.entry(prefix).or_default();
-        merge_exposed(inner, iv.name, interface.home, ());
-    }
-}
-
-// --- Open (expose everything) ---
-
-fn add_open_types<'a>(env: &mut Env<'a>, interface: &Interface<'a>) {
-    for alias in interface.aliases {
-        let typ = Type::Alias {
-            arity: alias.parameters.len(),
-            home: interface.home,
-            parameters: alias.parameters,
-            typ: alias.typ,
-        };
-        merge_exposed(&mut env.types, alias.name, interface.home, typ);
-    }
-    for union in interface.unions {
-        let typ = Type::Union {
-            arity: union.parameters.len(),
-            home: interface.home,
-        };
-        merge_exposed(&mut env.types, union.name, interface.home, typ);
-    }
-}
-
-fn add_open_ctors<'a>(env: &mut Env<'a>, interface: &Interface<'a>) {
-    for union in interface.unions {
-        for ctor in union.ctors {
-            if let Some(ctor_info) = lookup_qualified_ctor(env, interface.home.name, ctor.name) {
-                merge_exposed(&mut env.ctors, ctor.name, interface.home, ctor_info);
+        if let Some(public) = union.to_public() {
+            let can_union = bump.alloc(nash_ast::Union {
+                name: bump.alloc(Located::at(Region::zero(), public.name)),
+                parameters: public.parameters,
+                ctors: public.ctors,
+                alternatives: public.alternatives,
+                options: public.options,
+            });
+            let typ = Type::Union {
+                arity: public.parameters.len(),
+                home: interface.home,
+            };
+            let mut ctors = BTreeMap::new();
+            for ctor in public.ctors {
+                ctors.insert(
+                    ctor.name,
+                    make_union_ctor(interface.home, public.name, can_union, ctor),
+                );
             }
+            info.insert(public.name, (typ, ctors));
         }
     }
+
     for alias in interface.aliases {
-        if matches!(&alias.typ.value, CanType::Record { ext: None, .. })
-            && let Some(ctor_info) = lookup_qualified_ctor(env, interface.home.name, alias.name)
-        {
-            merge_exposed(&mut env.ctors, alias.name, interface.home, ctor_info);
+        if let Some(public) = alias.to_public() {
+            let typ = Type::Alias {
+                arity: public.parameters.len(),
+                home: interface.home,
+                parameters: public.parameters,
+                typ: public.typ,
+            };
+            let mut ctors = BTreeMap::new();
+            if let CanType::Record { fields, ext: None } = &public.typ.value {
+                ctors.insert(
+                    public.name,
+                    super::make_record_ctor(
+                        bump,
+                        interface.home,
+                        public.name,
+                        public.parameters,
+                        public.typ,
+                        fields,
+                    ),
+                );
+            }
+            // Elm's `Map.union` is left-biased (unions win), though a
+            // union/alias name collision cannot survive canonicalization.
+            info.entry(public.name).or_insert((typ, ctors));
         }
     }
+
+    info
 }
 
-fn add_open_values<'a>(env: &mut Env<'a>, interface: &Interface<'a>) {
-    for iv in interface.values {
-        add_single_value(env, interface.home, iv.name);
-    }
-}
-
-fn add_open_binops<'a>(env: &mut Env<'a>, interface: &Interface<'a>) {
-    for binop in interface.binops {
-        let info = Binop {
-            symbol: binop.symbol,
-            home: interface.home,
-            function: binop.function,
-            associativity: binop.associativity,
-            precedence: binop.precedence,
-        };
-        merge_exposed(&mut env.binops, binop.symbol, interface.home, info);
-    }
-}
-
-// --- Explicit exposing validation ---
-
-fn validate_explicit_exposing<'a>(
+/// Mirrors Elm's `addExposedValue`.
+fn add_explicit_exposing<'a>(
     bump: &'a Bump,
     env: &mut Env<'a>,
     interface: &Interface<'a>,
+    raw_type_info: &RawTypeInfo<'a>,
     exposed: &[&'a Exposed<'a>],
 ) -> Result<(), Vec<Error<'a>>> {
     let mut errors = Vec::new();
@@ -185,8 +187,8 @@ fn validate_explicit_exposing<'a>(
     for item in exposed {
         match item {
             Exposed::Lower(name) => {
-                if find_value(interface, name.value) {
-                    add_single_value(env, interface.home, name.value);
+                if let Some(value) = interface.values.iter().find(|v| v.name == name.value) {
+                    add_single_value(env, interface.home, value.name, value.annotation);
                 } else {
                     errors.push(Error::ImportExposingNotFound {
                         region: name.region,
@@ -197,58 +199,65 @@ fn validate_explicit_exposing<'a>(
                 }
             }
             Exposed::Upper { name, privacy } => match privacy {
-                Privacy::Private => {
-                    // `import Foo exposing (Bar)` — expose the type (alias or union)
-                    // but not union constructors
-                    if let Some(()) = find_and_expose_type(env, interface, name.value) {
-                        // Also expose record alias ctor if applicable
-                        expose_record_ctor_if_applicable(env, interface, name.value);
-                    } else if check_for_ctor_mistake(interface, name.value) {
-                        errors.push(Error::ImportCtorByName {
-                            region: name.region,
-                            name: name.value,
-                            type_name: find_ctor_type_name(interface, name.value)
-                                .unwrap_or(name.value),
-                        });
-                    } else {
-                        errors.push(Error::ImportExposingNotFound {
-                            region: name.region,
-                            module: interface.home,
-                            name: name.value,
-                            available: available_types(bump, interface),
-                        });
+                Privacy::Private => match raw_type_info.get(name.value) {
+                    Some((typ, ctors)) => {
+                        // Elm overwrites the type entry (`Map.insert`), and
+                        // only aliases bring their (record) ctor along.
+                        env.types
+                            .insert(name.value, Info::Specific(interface.home, *typ));
+                        if matches!(typ, Type::Alias { .. }) {
+                            for (ctor_name, ctor) in ctors {
+                                merge_exposed(&mut env.ctors, ctor_name, interface.home, *ctor);
+                            }
+                        }
                     }
-                }
-                Privacy::Public(_) => {
-                    // `import Foo exposing (Bar(..))` — must be a union, not an alias
-                    if find_union(interface, name.value) {
-                        find_and_expose_type(env, interface, name.value);
-                        expose_union_ctors(env, interface, name.value);
-                    } else if find_alias(interface, name.value) {
+                    None => {
+                        if let Some(type_name) = check_for_ctor_mistake(raw_type_info, name.value) {
+                            errors.push(Error::ImportCtorByName {
+                                region: name.region,
+                                name: name.value,
+                                type_name,
+                            });
+                        } else {
+                            errors.push(Error::ImportExposingNotFound {
+                                region: name.region,
+                                module: interface.home,
+                                name: name.value,
+                                available: available_types(bump, raw_type_info),
+                            });
+                        }
+                    }
+                },
+                Privacy::Public(dot_dot_region) => match raw_type_info.get(name.value) {
+                    Some((typ @ Type::Union { .. }, ctors)) => {
+                        env.types
+                            .insert(name.value, Info::Specific(interface.home, *typ));
+                        for (ctor_name, ctor) in ctors {
+                            merge_exposed(&mut env.ctors, ctor_name, interface.home, *ctor);
+                        }
+                    }
+                    Some((Type::Alias { .. }, _)) => {
                         errors.push(Error::ImportOpenAlias {
-                            region: name.region,
+                            region: *dot_dot_region,
                             name: name.value,
                         });
-                    } else {
+                    }
+                    None => {
                         errors.push(Error::ImportExposingNotFound {
                             region: name.region,
                             module: interface.home,
                             name: name.value,
-                            available: available_types(bump, interface),
+                            available: available_types(bump, raw_type_info),
                         });
                     }
-                }
+                },
             },
             Exposed::Operator { region, op } => {
-                if let Some(binop) = find_binop(interface, op) {
-                    let info = Binop {
-                        symbol: binop.symbol,
-                        home: interface.home,
-                        function: binop.function,
-                        associativity: binop.associativity,
-                        precedence: binop.precedence,
-                    };
-                    merge_exposed(&mut env.binops, binop.symbol, interface.home, info);
+                if let Some(binop) = interface.binops.iter().find(|b| b.symbol == *op) {
+                    let info = to_env_binop(interface.home, binop);
+                    // Elm overwrites binops (`Map.insert`).
+                    env.binops
+                        .insert(binop.symbol, Info::Specific(interface.home, info));
                 } else {
                     errors.push(Error::ImportExposingNotFound {
                         region: *region,
@@ -270,21 +279,25 @@ fn validate_explicit_exposing<'a>(
 
 // --- Single-item helpers ---
 
-fn add_single_value<'a>(env: &mut Env<'a>, home: ModuleName<'a>, name: &'a str) {
+fn add_single_value<'a>(
+    env: &mut Env<'a>,
+    home: ModuleName<'a>,
+    name: &'a str,
+    annotation: &'a nash_ast::Annotation<'a>,
+) {
     use std::collections::btree_map::Entry;
     match env.vars.entry(name) {
         Entry::Vacant(e) => {
-            e.insert(Var::Foreign(home));
+            e.insert(Var::Foreign(home, annotation));
         }
         Entry::Occupied(mut e) => match e.get() {
-            Var::Foreign(existing) if existing.name != home.name => {
+            // Full canonical comparison, like Elm's `mergeInfo`.
+            Var::Foreign(existing, _) if *existing != home => {
                 let first = *existing;
                 e.insert(Var::Foreigns(first, vec![home]));
             }
-            Var::Foreigns(_, others) => {
-                if !others.iter().any(|h| h.name == home.name)
-                    && let Var::Foreigns(_, others) = e.get_mut()
-                {
+            Var::Foreigns(..) => {
+                if let Var::Foreigns(_, others) = e.get_mut() {
                     others.push(home);
                 }
             }
@@ -293,152 +306,66 @@ fn add_single_value<'a>(env: &mut Env<'a>, home: ModuleName<'a>, name: &'a str) 
     }
 }
 
-fn find_and_expose_type<'a>(
-    env: &mut Env<'a>,
-    interface: &Interface<'a>,
-    name: &'a str,
-) -> Option<()> {
-    for alias in interface.aliases {
-        if alias.name == name {
-            let typ = Type::Alias {
-                arity: alias.parameters.len(),
-                home: interface.home,
-                parameters: alias.parameters,
-                typ: alias.typ,
-            };
-            merge_exposed(&mut env.types, name, interface.home, typ);
-            return Some(());
-        }
+fn to_env_binop<'a>(
+    home: ModuleName<'a>,
+    binop: &crate::interface::InterfaceBinop<'a>,
+) -> Binop<'a> {
+    Binop {
+        symbol: binop.symbol,
+        home,
+        function: binop.function,
+        annotation: binop.annotation,
+        associativity: binop.associativity,
+        precedence: binop.precedence,
     }
-    for union in interface.unions {
-        if union.name == name {
-            let typ = Type::Union {
-                arity: union.parameters.len(),
-                home: interface.home,
-            };
-            merge_exposed(&mut env.types, name, interface.home, typ);
-            return Some(());
+}
+
+/// Mirrors Elm's `checkForCtorMistake`: did the user try to expose a
+/// constructor by name? Returns the (alphabetically first) owning type.
+fn check_for_ctor_mistake<'a>(
+    raw_type_info: &RawTypeInfo<'a>,
+    given_name: &str,
+) -> Option<&'a str> {
+    for (_, ctors) in raw_type_info.values() {
+        for (ctor_name, ctor) in ctors {
+            if *ctor_name != given_name {
+                continue;
+            }
+            match ctor {
+                Ctor::Union { type_name, .. } => return Some(type_name),
+                Ctor::Bool { union, .. } => return Some(union.name.value),
+                Ctor::RecordCtor { .. } => {}
+            }
         }
     }
     None
 }
 
-fn expose_union_ctors<'a>(env: &mut Env<'a>, interface: &Interface<'a>, union_name: &'a str) {
-    let q_ctor_map = env.q_ctors.get(interface.home.name);
-    for union in interface.unions {
-        if union.name == union_name {
-            for ctor in union.ctors {
-                if let Some(super::Info::Specific(_, ctor_info)) =
-                    q_ctor_map.and_then(|m| m.get(ctor.name))
-                {
-                    merge_exposed(&mut env.ctors, ctor.name, interface.home, *ctor_info);
-                }
-            }
-        }
-    }
-}
-
-fn expose_record_ctor_if_applicable<'a>(
-    env: &mut Env<'a>,
-    interface: &Interface<'a>,
-    name: &'a str,
-) {
-    for alias in interface.aliases {
-        if alias.name == name
-            && matches!(&alias.typ.value, CanType::Record { ext: None, .. })
-            && let Some(super::Info::Specific(_, ctor_info)) = env
-                .q_ctors
-                .get(interface.home.name)
-                .and_then(|m| m.get(name))
-        {
-            merge_exposed(&mut env.ctors, name, interface.home, *ctor_info);
-        }
-    }
-}
-
-// --- Lookup helpers ---
-
-fn lookup_qualified_ctor<'a>(env: &Env<'a>, module: &str, name: &str) -> Option<Ctor<'a>> {
-    match env.q_ctors.get(module)?.get(name)? {
-        super::Info::Specific(_, ctor) => Some(*ctor),
-        super::Info::Ambiguous(..) => None,
-    }
-}
-
-fn find_value(interface: &Interface<'_>, name: &str) -> bool {
-    interface.values.iter().any(|v| v.name == name)
-}
-
-fn find_alias(interface: &Interface<'_>, name: &str) -> bool {
-    interface.aliases.iter().any(|a| a.name == name)
-}
-
-fn find_union(interface: &Interface<'_>, name: &str) -> bool {
-    interface.unions.iter().any(|u| u.name == name)
-}
-
-fn find_binop<'a>(
-    interface: &Interface<'a>,
-    symbol: &str,
-) -> Option<&'a crate::interface::InterfaceBinop<'a>> {
-    interface.binops.iter().find(|b| b.symbol == symbol)
-}
-
-fn check_for_ctor_mistake(interface: &Interface<'_>, name: &str) -> bool {
-    interface
-        .unions
-        .iter()
-        .any(|u| u.ctors.iter().any(|c| c.name == name))
-}
-
-fn find_ctor_type_name<'a>(interface: &Interface<'a>, ctor_name: &str) -> Option<&'a str> {
-    interface
-        .unions
-        .iter()
-        .find(|u| u.ctors.iter().any(|c| c.name == ctor_name))
-        .map(|u| u.name)
-}
-
 fn available_values<'a>(bump: &'a Bump, interface: &Interface<'a>) -> &'a [&'a str] {
-    bump.alloc_slice_fill_iter(interface.values.iter().map(|v| v.name))
-}
-
-fn available_types<'a>(bump: &'a Bump, interface: &Interface<'a>) -> &'a [&'a str] {
-    let names: Vec<&'a str> = interface
-        .aliases
-        .iter()
-        .map(|a| a.name)
-        .chain(interface.unions.iter().map(|u| u.name))
-        .collect();
+    let mut names: Vec<&'a str> = interface.values.iter().map(|v| v.name).collect();
+    names.sort_unstable();
     bump.alloc_slice_fill_iter(names)
 }
 
+fn available_types<'a>(bump: &'a Bump, raw_type_info: &RawTypeInfo<'a>) -> &'a [&'a str] {
+    bump.alloc_slice_fill_iter(raw_type_info.keys().copied())
+}
+
 fn available_binops<'a>(bump: &'a Bump, interface: &Interface<'a>) -> &'a [&'a str] {
-    bump.alloc_slice_fill_iter(interface.binops.iter().map(|b| b.symbol))
+    let mut symbols: Vec<&'a str> = interface.binops.iter().map(|b| b.symbol).collect();
+    symbols.sort_unstable();
+    bump.alloc_slice_fill_iter(symbols)
 }
 
 // --- Construction helpers ---
 
-fn make_can_union<'a>(
-    bump: &'a Bump,
-    union: &crate::interface::InterfaceUnion<'a>,
-) -> &'a nash_ast::Union<'a> {
-    bump.alloc(nash_ast::Union {
-        name: bump.alloc(Located::at(Region::zero(), union.name)),
-        parameters: union.parameters,
-        ctors: union.ctors,
-        alternatives: union.alternatives,
-        options: union.options,
-    })
-}
-
 fn make_union_ctor<'a>(
     home: ModuleName<'a>,
-    union: &crate::interface::InterfaceUnion<'a>,
+    union_name: &'a str,
     can_union: &'a nash_ast::Union<'a>,
     ctor: &nash_ast::Ctor<'a>,
 ) -> Ctor<'a> {
-    if home.name == "Basics" && union.name == "Bool" {
+    if home.name == "Basics" && union_name == "Bool" {
         return Ctor::Bool {
             home,
             union: can_union,
@@ -447,34 +374,14 @@ fn make_union_ctor<'a>(
     }
     Ctor::Union {
         home,
-        type_name: union.name,
-        type_vars: union.parameters,
+        type_name: union_name,
+        type_vars: can_union.parameters,
         union: can_union,
         index: ctor.index,
         arity: ctor.arity,
         arguments: ctor.arguments,
-        options: union.options,
-        alternatives: union.alternatives,
-    }
-}
-
-fn make_record_ctor<'a>(
-    bump: &'a Bump,
-    home: ModuleName<'a>,
-    alias: &crate::interface::InterfaceAlias<'a>,
-) -> Option<Ctor<'a>> {
-    if let CanType::Record { fields, ext: None } = &alias.typ.value {
-        let field_names = bump.alloc_slice_fill_iter(fields.iter().map(|f| f.field));
-        let field_types = bump.alloc_slice_fill_iter(fields.iter().map(|f| f.typ));
-        Some(Ctor::RecordCtor {
-            home,
-            alias_name: alias.name,
-            type_vars: alias.parameters,
-            field_names,
-            field_types,
-        })
-    } else {
-        None
+        options: can_union.options,
+        alternatives: can_union.alternatives,
     }
 }
 
@@ -505,7 +412,7 @@ mod tests {
         };
         let env = create_initial_env(&bump, home, None, &[]).unwrap();
         match env.types.get("List") {
-            Some(super::super::Info::Specific(module, Type::Union { arity: 1, .. })) => {
+            Some(Info::Specific(module, Type::Union { arity: 1, .. })) => {
                 assert_eq!(module.name, "List");
             }
             other => panic!("Expected Specific List Union with arity 1, got {other:?}"),

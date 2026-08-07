@@ -4,29 +4,6 @@ description: "Code:\n\nmodule Main exposing (..)\n\ntype alias Foo = Int\n\ntype
 ---
 [
     DuplicateType {
-        name: "Foo",
-        first: Region {
-            start: Position {
-                line: 3,
-                column: 12,
-            },
-            end: Position {
-                line: 3,
-                column: 15,
-            },
-        },
-        second: Region {
-            start: Position {
-                line: 5,
-                column: 12,
-            },
-            end: Position {
-                line: 5,
-                column: 15,
-            },
-        },
-    },
-    DuplicateType {
         name: "Bar",
         first: Region {
             start: Position {
@@ -45,6 +22,29 @@ description: "Code:\n\nmodule Main exposing (..)\n\ntype alias Foo = Int\n\ntype
             },
             end: Position {
                 line: 9,
+                column: 15,
+            },
+        },
+    },
+    DuplicateType {
+        name: "Foo",
+        first: Region {
+            start: Position {
+                line: 3,
+                column: 12,
+            },
+            end: Position {
+                line: 3,
+                column: 15,
+            },
+        },
+        second: Region {
+            start: Position {
+                line: 5,
+                column: 12,
+            },
+            end: Position {
+                line: 5,
                 column: 15,
             },
         },

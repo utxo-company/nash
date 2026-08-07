@@ -7,18 +7,18 @@ description: "Code:\n\nmodule Main exposing (..)\n\nf =\n    let\n        a = b\
         name: Located {
             region: Region {
                 start: Position {
-                    line: 6,
+                    line: 5,
                     column: 9,
                 },
                 end: Position {
-                    line: 6,
+                    line: 5,
                     column: 10,
                 },
             },
-            value: "b",
+            value: "a",
         },
         others: [
-            "a",
+            "b",
         ],
     },
 ]

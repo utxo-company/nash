@@ -13,6 +13,8 @@ mod pattern;
 mod space;
 mod string;
 mod symbol;
+#[cfg(test)]
+pub(crate) mod test_support;
 mod type_;
 
 pub type Row = u16;
@@ -58,7 +60,9 @@ impl<'a> Parser<'a> {
             bump,
             src,
             pos: 0,
-            indent: 1, // Start at 1 like Elm - top-level declarations are at column 1
+            // Elm starts at 0; 1 is behaviorally identical because
+            // `checkIndent`'s `col > 1` guard dominates at top level.
+            indent: 1,
             row: 1,
             col: 1,
         }

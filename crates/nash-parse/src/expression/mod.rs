@@ -410,12 +410,64 @@ macro_rules! assert_expression_snapshot {
     }};
 }
 
+/// Snapshot test macro for multiline terms, laid out as they would appear
+/// indented inside a definition. Bare fragments cannot use multiline
+/// layout: a token at column 1 always starts a new top-level declaration.
+#[cfg(test)]
+macro_rules! assert_indented_expr_snapshot {
+    ($code:expr) => {{
+        let bump = bumpalo::Bump::new();
+        let fragment = indoc::indoc!($code);
+        let indented = $crate::test_support::indent_fragment(fragment);
+        let src = bump.alloc_str(&indented);
+        let mut parser = $crate::Parser::new(&bump, src.as_bytes());
+        parser
+            .chomp(|_, _, _| "space error")
+            .expect("expected leading indent");
+        let result = parser.term().expect("expected successful parse");
+
+        insta::with_settings!({
+            description => format!("Code (indented inside a def):\n\n{}", indented),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }};
+}
+
+/// Like `assert_indented_expr_snapshot` but for full expressions.
+#[cfg(test)]
+macro_rules! assert_indented_expression_snapshot {
+    ($code:expr) => {{
+        let bump = bumpalo::Bump::new();
+        let fragment = indoc::indoc!($code);
+        let indented = $crate::test_support::indent_fragment(fragment);
+        let src = bump.alloc_str(&indented);
+        let mut parser = $crate::Parser::new(&bump, src.as_bytes());
+        parser
+            .chomp(|_, _, _| "space error")
+            .expect("expected leading indent");
+        let (result, _end) = parser.expression().expect("expected successful parse");
+
+        insta::with_settings!({
+            description => format!("Code (indented inside a def):\n\n{}", indented),
+            omit_expression => true,
+        }, {
+            insta::assert_debug_snapshot!(result);
+        });
+    }};
+}
+
 #[cfg(test)]
 pub(crate) use assert_expr_error_snapshot;
 #[cfg(test)]
 pub(crate) use assert_expr_snapshot;
 #[cfg(test)]
 pub(crate) use assert_expression_snapshot;
+#[cfg(test)]
+pub(crate) use assert_indented_expr_snapshot;
+#[cfg(test)]
+pub(crate) use assert_indented_expression_snapshot;
 
 #[cfg(test)]
 mod tests {
