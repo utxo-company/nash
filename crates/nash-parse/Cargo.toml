@@ -1,6 +1,6 @@
 [package]
 name = "nash-parse"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 description = "Parser for the nash programming language"
 homepage.workspace = true
