@@ -314,7 +314,7 @@ pub struct AliasArgument<'a> {
     pub typ: &'a Located<Type<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct FieldType<'a> {
     pub index: u16,
     pub field: &'a str,

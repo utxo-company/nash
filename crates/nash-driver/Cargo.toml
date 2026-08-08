@@ -21,8 +21,10 @@ url.workspace = true
 nash-config = { path = "../nash-config", version = "0.3.0" }
 nash-ast = { path = "../nash-ast", version = "0.2.0" }
 nash-can = { path = "../nash-can", version = "0.2.0" }
+nash-constrain = { path = "../nash-constrain", version = "0.1.0" }
 nash-parse = { path = "../nash-parse", version = "0.2.0" }
 nash-region = { path = "../nash-region", version = "0.2.0" }
+nash-solve = { path = "../nash-solve", version = "0.1.0" }
 nash-source = { path = "../nash-source", version = "0.2.0" }
 
 [dev-dependencies]

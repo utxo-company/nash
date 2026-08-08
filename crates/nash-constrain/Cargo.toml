@@ -12,3 +12,6 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+bumpalo.workspace = true
+nash-ast = { path = "../nash-ast", version = "0.2.0" }
+nash-region = { path = "../nash-region", version = "0.2.0" }

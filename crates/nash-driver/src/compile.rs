@@ -1,18 +1,17 @@
 //! Module compilation orchestration.
 //!
-//! Currently each module is parsed and canonicalized independently.
-//! Cross-module compilation is intentionally absent: interfaces only
-//! exist for type-solved modules (Elm's `Interface.fromModule` takes the
-//! solver's annotations), so wiring imports back up is blocked on
-//! `nash-constrain`/`nash-solve`. Once those land, the pipeline becomes
-//! parse -> canonicalize -> constrain -> solve -> interface, compiled in
-//! dependency order.
+//! Each module runs Elm's full pipeline: parse -> canonicalize ->
+//! constrain -> solve -> `Interface::from_module` with the solver's
+//! annotations. Modules compile in dependency order, and each solved
+//! module's interface is deep-copied into a build-wide arena so dependents
+//! canonicalize their imports against it — interfaces only ever exist for
+//! type-solved modules.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bumpalo::Bump;
+use nash_can::Interface;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use url::Url;
@@ -69,12 +68,11 @@ struct CompileOutput {
     warnings: Vec<String>,
 }
 
-/// Parse and canonicalize all modules.
+/// Compile all modules through the full pipeline, in dependency order.
 ///
 /// The async part only fetches sources; the CPU-bound compilation runs on
 /// tokio's blocking pool (`spawn_blocking`) so no executor worker is ever
-/// stalled. Modules are independent (see module docs), so they all compile
-/// in parallel on a bounded pool of worker threads.
+/// stalled.
 pub async fn build(db: Arc<Mutex<Database>>, graph: &DepGraph) -> BuildResult {
     let modules: Vec<&Url> = graph.levels().into_iter().flatten().collect();
     let sources = fetch_sources(&db, &modules).await;
@@ -84,11 +82,23 @@ pub async fn build(db: Arc<Mutex<Database>>, graph: &DepGraph) -> BuildResult {
         .expect("compile task panicked")
 }
 
+/// Compile modules one at a time in dependency order, threading each
+/// solved module's interface to its dependents through a build-wide arena.
+///
+/// Type checking is inherently dependency-ordered, so within-build
+/// parallelism is limited to source fetching for now.
 fn build_sync(sources: Vec<(Url, Result<String, String>)>) -> BuildResult {
+    let store = Bump::new();
+    let mut interfaces: BTreeMap<&str, Interface<'_>> = BTreeMap::new();
+
     let mut results: HashMap<Url, ModuleResult> = HashMap::new();
     let mut all_warnings: Vec<String> = Vec::new();
 
-    for output in compile_all(&sources) {
+    for (uri, source) in &sources {
+        let (output, interface) = compile_module(uri, source, &store, &interfaces);
+        if let Some(interface) = interface {
+            interfaces.insert(interface.home.name, interface);
+        }
         all_warnings.extend(output.warnings);
         results.insert(output.uri, output.result);
     }
@@ -106,50 +116,6 @@ fn build_sync(sources: Vec<(Url, Result<String, String>)>) -> BuildResult {
         failed: total - success,
         warnings: all_warnings,
     }
-}
-
-/// Compile all modules on a bounded pool of scoped threads.
-///
-/// Workers pull the next module index from a shared counter, so at most
-/// `available_parallelism` OS threads exist regardless of project size.
-/// Outputs are re-sorted by index to keep results deterministic.
-fn compile_all(sources: &[(Url, Result<String, String>)]) -> Vec<CompileOutput> {
-    if sources.is_empty() {
-        return Vec::new();
-    }
-
-    let worker_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .min(sources.len());
-    let next = AtomicUsize::new(0);
-
-    let mut indexed: Vec<(usize, CompileOutput)> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..worker_count)
-            .map(|_| {
-                let next = &next;
-                scope.spawn(move || {
-                    let mut outputs = Vec::new();
-                    loop {
-                        let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some((uri, src)) = sources.get(index) else {
-                            break;
-                        };
-                        outputs.push((index, compile_module(uri, src)));
-                    }
-                    outputs
-                })
-            })
-            .collect();
-
-        handles
-            .into_iter()
-            .flat_map(|handle| handle.join().expect("compile worker panicked"))
-            .collect()
-    });
-
-    indexed.sort_by_key(|(index, _)| *index);
-    indexed.into_iter().map(|(_, output)| output).collect()
 }
 
 /// Fetch source content for all modules, in parallel.
@@ -180,61 +146,76 @@ async fn fetch_sources(
     results
 }
 
-/// Parse + canonicalize a single module in its own arena.
-fn compile_module(uri: &Url, source: &Result<String, String>) -> CompileOutput {
+/// Run one module through the full pipeline in its own arena:
+/// parse -> canonicalize -> constrain -> solve -> interface.
+///
+/// On success the module's interface is deep-copied into the build-wide
+/// `store` arena so it outlives this module's arena.
+fn compile_module<'s>(
+    uri: &Url,
+    source: &Result<String, String>,
+    store: &'s Bump,
+    interfaces: &BTreeMap<&'s str, Interface<'s>>,
+) -> (CompileOutput, Option<Interface<'s>>) {
+    let failed = |message: String| {
+        (
+            CompileOutput {
+                uri: uri.clone(),
+                result: ModuleResult::Failed { message },
+                warnings: vec![],
+            },
+            None,
+        )
+    };
+
     let source = match source {
         Ok(s) => s,
-        Err(e) => {
-            return CompileOutput {
-                uri: uri.clone(),
-                result: ModuleResult::Failed { message: e.clone() },
-                warnings: vec![],
-            };
-        }
+        Err(e) => return failed(e.clone()),
     };
 
     let bump = Bump::new();
     let src: &str = bump.alloc_str(source);
     let mut parser = nash_parse::Parser::new(&bump, src.as_bytes());
 
-    let (result, warnings) = match parser.module() {
-        Err(e) => (
-            ModuleResult::Failed {
-                message: format!("{:?}", e),
-            },
-            vec![],
-        ),
-        Ok(module) => {
-            let context = nash_can::Context {
-                package: None,
-                interfaces: None,
-            };
-
-            match nash_can::canonicalize(&bump, context, &module) {
-                Ok(can_result) => {
-                    let warnings: Vec<String> = can_result
-                        .warnings
-                        .iter()
-                        .map(|w| format!("{:?}", w))
-                        .collect();
-                    let decl_count = count_decls(can_result.module.decls);
-                    (ModuleResult::Success { decl_count }, warnings)
-                }
-                Err(errors) => (
-                    ModuleResult::Failed {
-                        message: format!("{:?}", errors),
-                    },
-                    vec![],
-                ),
-            }
-        }
+    let module = match parser.module() {
+        Ok(module) => module,
+        Err(e) => return failed(format!("{:?}", e)),
     };
 
-    CompileOutput {
-        uri: uri.clone(),
-        result,
-        warnings,
-    }
+    let context = nash_can::Context {
+        package: None,
+        interfaces: Some(interfaces),
+    };
+    let can_result = match nash_can::canonicalize(&bump, context, &module) {
+        Ok(can_result) => can_result,
+        Err(errors) => return failed(format!("{:?}", errors)),
+    };
+    let warnings: Vec<String> = can_result
+        .warnings
+        .iter()
+        .map(|w| format!("{:?}", w))
+        .collect();
+
+    let mut uf = nash_constrain::UnionFind::new();
+    let constraint = nash_constrain::constrain(&bump, &mut uf, &can_result.module);
+    let annotations = match nash_solve::run(&bump, &mut uf, &constraint) {
+        Ok(annotations) => annotations,
+        Err(errors) => return failed(format!("{:?}", errors)),
+    };
+
+    let interface = nash_can::from_module(&bump, &can_result.module, &annotations);
+    let stored = nash_can::deep_copy_interface(store, &interface);
+
+    (
+        CompileOutput {
+            uri: uri.clone(),
+            result: ModuleResult::Success {
+                decl_count: count_decls(can_result.module.decls),
+            },
+            warnings,
+        },
+        Some(stored),
+    )
 }
 
 fn count_decls(decls: &nash_ast::Decls<'_>) -> usize {
@@ -367,7 +348,7 @@ main = 42
     }
 
     #[tokio::test]
-    async fn test_imports_blocked_until_solver_exists() {
+    async fn test_import_compiles_against_solved_interface() {
         let mem = InMemorySource::new();
 
         mem.insert(
@@ -398,10 +379,97 @@ main = Utils.helper
         let graph = build_graph(db.clone(), &modules).await.unwrap();
         let result = build(db, &graph).await;
 
-        // Utils compiles standalone; Main's import cannot resolve until
-        // interfaces exist, which requires the type solver.
+        // Utils is solved first; Main canonicalizes and type checks
+        // against its interface.
+        assert_eq!(result.total, 2);
+        assert_eq!(result.success, 2);
+        assert!(result.is_success());
+    }
+
+    #[tokio::test]
+    async fn test_cross_module_type_error() {
+        let mem = InMemorySource::new();
+
+        mem.insert(
+            url("Utils.nash"),
+            r#"
+module Utils exposing (..)
+
+helper = 1
+"#
+            .to_string(),
+        );
+
+        mem.insert(
+            url("Main.nash"),
+            r#"
+module Main exposing (..)
+
+import Utils
+
+main = Utils.helper "not a function argument"
+"#
+            .to_string(),
+        );
+
+        let db = Arc::new(Mutex::new(Database::new(mem)));
+        let modules = vec![url("Utils.nash"), url("Main.nash")];
+
+        let graph = build_graph(db.clone(), &modules).await.unwrap();
+        let result = build(db, &graph).await;
+
+        // Utils.helper is a number, not a function: Main gets a type
+        // error against the imported annotation.
         assert_eq!(result.total, 2);
         assert_eq!(result.success, 1);
         assert_eq!(result.failed, 1);
+        assert!(matches!(
+            result.modules[&url("Main.nash")],
+            ModuleResult::Failed { .. }
+        ));
+    }
+
+    /// Unannotated mutually recursive exports used from another module:
+    /// Elm 0.19.1 crashes on this exact shape ("Map.!: given key is not an
+    /// element in the map") because `getVarNames`' visit marks persist
+    /// across `toAnnotation` calls, leaving `pong`'s `Forall` empty. Nash
+    /// deliberately fixes that (see `nash-solve/src/annotation.rs`).
+    #[tokio::test]
+    async fn test_cross_module_mutual_recursion() {
+        let mem = InMemorySource::new();
+
+        mem.insert(
+            url("Utils.nash"),
+            r#"
+module Utils exposing (..)
+
+ping x = pong x
+
+pong x = ping x
+"#
+            .to_string(),
+        );
+
+        mem.insert(
+            url("Main.nash"),
+            r#"
+module Main exposing (..)
+
+import Utils
+
+main = Utils.pong 1
+"#
+            .to_string(),
+        );
+
+        let db = Arc::new(Mutex::new(Database::new(mem)));
+        let modules = vec![url("Utils.nash"), url("Main.nash")];
+
+        let graph = build_graph(db.clone(), &modules).await.unwrap();
+        let result = build(db, &graph).await;
+
+        assert_eq!(result.total, 2);
+        assert_eq!(result.success, 2);
+        assert!(result.is_success());
     }
 }

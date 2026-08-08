@@ -1896,6 +1896,11 @@ dependencies = [
 [[package]]
 name = "nash-constrain"
 version = "0.1.0"
+dependencies = [
+ "bumpalo",
+ "nash-ast",
+ "nash-region",
+]
 
 [[package]]
 name = "nash-driver"
@@ -1911,8 +1916,10 @@ dependencies = [
  "nash-ast",
  "nash-can",
  "nash-config",
+ "nash-constrain",
  "nash-parse",
  "nash-region",
+ "nash-solve",
  "nash-source",
  "serde",
  "thiserror 2.0.18",
@@ -1971,6 +1978,17 @@ version = "0.2.0"
 [[package]]
 name = "nash-solve"
 version = "0.1.0"
+dependencies = [
+ "bumpalo",
+ "indoc",
+ "insta",
+ "nash-ast",
+ "nash-can",
+ "nash-constrain",
+ "nash-parse",
+ "nash-region",
+ "nash-source",
+]
 
 [[package]]
 name = "nash-source"

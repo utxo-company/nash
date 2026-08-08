@@ -101,9 +101,9 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
   - `OverlaySource` (composition: InMemory overlays FileSystem)
 - **Build model:** Elm's pipeline per module — parse → canonicalize →
   constrain → solve → interface. Interfaces only exist for solved
-  modules, so cross-module compilation waits for `nash-constrain` /
-  `nash-solve`; until then modules parse and canonicalize independently.
-  Sources may be fetched and parsed in parallel, but type checking is
+  modules: the driver compiles in dependency order and deep-copies each
+  solved module's interface into a build-wide arena for its dependents.
+  Sources are fetched in parallel, but type checking is
   dependency-ordered.
 - **Caching:** Interface-only (always regenerate UPLC), bincode serialization
 - **Invalidation:** Reverse dependency tracking for LSP
@@ -143,19 +143,24 @@ Modules do NOT individually compile to UPLC - only validators produce UPLC outpu
 
 ### Phase 4: Type Inference (`nash-constrain` + `nash-solve`)
 
-**Goal:** Bidirectional type inference via constraint generation and solving.
+**Goal:** Hindley-Milner type inference via constraint generation and
+rank-based solving, ported from Elm's `Type/*`.
 
 **nash-constrain:**
-- Generate type constraints from canonical AST
-- Track expected vs actual types
-- Handle pattern matching constraints
+- Generate type constraints from the canonical AST, with the expectation
+  contexts Elm uses for error messages (`Expected`/`Category`/...)
+- Pattern constraints with binding headers
+- Shared vocabulary: union-find variables, descriptors, inference types
 
 **nash-solve:**
-- Unification algorithm
-- Let-polymorphism
-- Record types with row polymorphism
-- Exhaustiveness checking for patterns
-- Generate typed AST (`nash-ast`)
+- Weight-balanced union-find unification with number/comparable/appendable
+  supertypes, extensible records, and aliases
+- Let-polymorphism via rank-based generalization (Elm's pools)
+- Occurs check and infinite-type errors
+- `toAnnotation`: solved variables back to canonical annotations, feeding
+  `Interface::from_module`
+- Exhaustiveness checking is a later post-solve pass (Elm's
+  `Nitpick/PatternMatches.hs`), not part of the solver
 
 **Reference:** `elm/compiler/src/Type/`
 
@@ -445,8 +450,24 @@ AST types: `crates/nash-source/src/lib.rs`
 - [x] Expression canonicalization with operator desugaring (`crates/nash-can/src/expression.rs`)
 - [x] Two-phase SCC cycle detection, exact `Data.Graph.stronglyConnComp` port (`crates/nash-can/src/scc.rs`)
 - [x] Export canonicalization and interface extraction (`crates/nash-can/src/interface.rs`)
+- [x] Foreign value/binop annotations flow from solved interfaces (`crates/nash-can/src/environment/foreign.rs`)
 - [ ] Prelude / default imports (deferred to prelude design)
-- [ ] Foreign value/binop annotations (deferred to type inference)
+
+### Type Inference
+- [x] Union-find with weight balancing and path compression (`crates/nash-constrain/src/union_find.rs`)
+- [x] `Type.Type` data half: descriptors, inference types, constraints (`crates/nash-constrain/src/type_.rs`)
+- [x] Type error data (`Type/Error.hs` + `Reporting/Error/Type.hs`, rendering deferred) (`crates/nash-constrain/src/{error,error_type}.rs`)
+- [x] Canonical type instantiation (`crates/nash-constrain/src/instantiate.rs`)
+- [x] Pattern constraint generation (`crates/nash-constrain/src/pattern.rs`)
+- [x] Expression constraint generation incl. recursive defs (`crates/nash-constrain/src/expression.rs`)
+- [x] Module constraint entry point (`crates/nash-constrain/src/module.rs`)
+- [x] Unification incl. supertypes, records, aliases (`crates/nash-solve/src/unify.rs`)
+- [x] Occurs check (`crates/nash-solve/src/occurs.rs`)
+- [x] Solver with rank-based generalization and pools (`crates/nash-solve/src/solve.rs`)
+- [x] `toAnnotation`/`toErrorType` with fresh-name generation (`crates/nash-solve/src/annotation.rs`)
+- [x] Driver pipeline: dependency-ordered builds against solved interfaces (`crates/nash-driver/src/compile.rs`)
+- [ ] Exhaustiveness checking (Elm's `Nitpick/PatternMatches.hs`, a post-solve pass)
+- [ ] Type error rendering (deferred with the rest of error reporting)
 
 ---
 
