@@ -1,5 +1,11 @@
 # nash-parse
 
+## 0.2.2 — 2026-08-15
+
+### Patch changes
+
+- Updated dependencies: nash-source@0.3.0
+
 ## 0.2.1 — 2026-08-08
 
 ### Patch changes

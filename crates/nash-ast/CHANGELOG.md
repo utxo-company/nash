@@ -1,5 +1,11 @@
 # nash-ast
 
+## 0.3.1 — 2026-08-15
+
+### Patch changes
+
+- Updated dependencies: nash-source@0.3.0
+
 ## 0.3.0 — 2026-08-08
 
 ### Minor changes

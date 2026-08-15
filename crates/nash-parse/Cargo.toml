@@ -1,6 +1,6 @@
 [package]
 name = "nash-parse"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
 description = "Parser for the nash programming language"
 homepage.workspace = true
@@ -10,7 +10,7 @@ license.workspace = true
 [dependencies]
 bumpalo.workspace = true
 nash-region = { path = "../nash-region", version = "0.2.0" }
-nash-source = { path = "../nash-source", version = "0.2.0" }
+nash-source = { path = "../nash-source", version = "0.3.0" }
 
 [dev-dependencies]
 indoc.workspace = true
