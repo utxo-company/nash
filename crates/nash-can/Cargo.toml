@@ -1,6 +1,6 @@
 [package]
 name = "nash-can"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 description = "Canonicalize a nash source tree, resolving symbols, re-ordering definitions, and preparing a module for type inference."
 homepage.workspace = true
@@ -9,11 +9,11 @@ license.workspace = true
 
 [dependencies]
 bumpalo.workspace = true
-nash-ast = { path = "../nash-ast", version = "0.3.0" }
+nash-ast = { path = "../nash-ast", version = "0.3.1" }
 nash-region = { path = "../nash-region", version = "0.2.0" }
-nash-source = { path = "../nash-source", version = "0.2.0" }
+nash-source = { path = "../nash-source", version = "0.3.0" }
 
 [dev-dependencies]
 indoc.workspace = true
 insta.workspace = true
-nash-parse = { path = "../nash-parse", version = "0.2.1" }
+nash-parse = { path = "../nash-parse", version = "0.2.2" }

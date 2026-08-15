@@ -1,6 +1,6 @@
 [package]
 name = "nash-constrain"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 description = """
 Responsible for building the set of constraints that are used \
@@ -13,5 +13,5 @@ license.workspace = true
 
 [dependencies]
 bumpalo.workspace = true
-nash-ast = { path = "../nash-ast", version = "0.3.0" }
+nash-ast = { path = "../nash-ast", version = "0.3.1" }
 nash-region = { path = "../nash-region", version = "0.2.0" }
