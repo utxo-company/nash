@@ -1,5 +1,12 @@
 # nash-cli
 
+## 0.2.1 — 2026-08-08
+
+### Patch changes
+
+- [1c5f4a8](https://github.com/utxo-company/nash/commit/1c5f4a803a5f6f7f8178fc02d8edbd89bf234c32) Fix the compiler version proxy: guard against a cached binary whose version doesn't match its folder name exec'ing itself in a silent infinite loop (now a clear error via the `NASH_PROXY_VERSION` env var handshake), and fix the release asset name to match what cargo-dist actually publishes (`nash-cli-{target}` instead of `nash-{target}`), which made every proxy download fail. — Thanks @rvcas!
+- Updated dependencies: nash-driver@0.2.0
+
 ## 0.2.0 — 2026-03-10
 
 ### Minor changes
